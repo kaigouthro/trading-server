@@ -139,9 +139,8 @@ class Bitmex_WS:
                         self.data[table],
                         deleteData)
                     self.data[table].remove(item)
-            else:
-                if action is not None:
-                    raise Exception("Unknown action: %s" % action)
+            elif action is not None:
+                raise Exception(f"Unknown action: {action}")
         except Exception:
             self.logger.info(traceback.format_exc())
 
@@ -177,7 +176,7 @@ class Bitmex_WS:
             None.
         """
 
-        self.logger.info("BitMEX websocket error: " + str(msg))
+        self.logger.info(f"BitMEX websocket error: {str(msg)}")
 
         # attempt to reconnect if  ws is not connected
         self.ws = None
@@ -250,10 +249,7 @@ class Bitmex_WS:
         """
 
         for item in table:
-            matched = True
-            for key in keys:
-                if item[key] != match_data[key]:
-                    matched = False
+            matched = all(item[key] == match_data[key] for key in keys)
             if matched:
                 return item
 
@@ -278,7 +274,7 @@ class Bitmex_WS:
         count = 0
         for symbol in self.symbols:
             for channel in self.channels:
-                string += '"' + channel + ':' + str(symbol) + '"'
+                string += f'"{channel}:{str(symbol)}"'
                 count += 1
                 if count < len(self.channels) * len(self.symbols):
                     string += ", "
@@ -294,6 +290,4 @@ class Bitmex_WS:
         Raises:
             None.
         """
-        if o['leavesQty'] is None:
-            return True
-        return o['leavesQty'] > 0
+        return True if o['leavesQty'] is None else o['leavesQty'] > 0

@@ -44,10 +44,10 @@ class Telegram(MessagingClient):
             data = {'chat_id': user_id, 'caption': text}
             r = requests.post(url, files=files, data=data)
 
-            if int(r.status_code) == 200:
-                self.logger.info("Setup snapshot sent to " + str(user_id) + ".")
+            if r.status_code == 200:
+                self.logger.info(f"Setup snapshot sent to {str(user_id)}.")
             else:
-                self.logger.info("Sending snapshot to " + str(user_id) + " failed.")
+                self.logger.info(f"Sending snapshot to {str(user_id)} failed.")
                 print(r.status_code)
 
     def send_option_keyboard(self, keyboard):
@@ -61,10 +61,10 @@ class Telegram(MessagingClient):
 
             r = requests.post(url, json=text)
 
-            if int(r.status_code) == 200:
-                self.logger.info("Consent query sent to " + str(user_id) + ".")
+            if r.status_code == 200:
+                self.logger.info(f"Consent query sent to {str(user_id)}.")
             else:
-                self.logger.info("Sending consent query to " + str(user_id) + " failed.")
+                self.logger.info(f"Sending consent query to {str(user_id)} failed.")
                 print(r.status_code)
                 print(r.json())
 
@@ -77,10 +77,10 @@ class Telegram(MessagingClient):
             data = {'chat_id': user_id, 'text': text}
             r = requests.post(url, data=data)
 
-            if int(r.status_code) == 200:
-                self.logger.info("Text message sent to " + str(user_id) + ".")
+            if r.status_code == 200:
+                self.logger.info(f"Text message sent to {str(user_id)}.")
             else:
-                self.logger.info("Sending message to " + str(user_id) + " failed.")
+                self.logger.info(f"Sending message to {str(user_id)} failed.")
                 print(r.json())
 
     def get_updates(self):

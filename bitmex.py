@@ -159,36 +159,33 @@ class Bitmex(Exchange):
 
         bars_to_parse = requests.get(payload).json()
 
-        # Store only required values (OHLCV) and convert timestamp to epoch.
-        new_bars = []
-        for bar in bars_to_parse:
-            new_bars.append({
+        return [
+            {
                 'symbol': symbol,
                 'timestamp': int(parser.parse(bar['timestamp']).timestamp()),
                 'open': bar['open'],
                 'high': bar['high'],
                 'low': bar['low'],
                 'close': bar['close'],
-                'volume': bar['volume']})
-
-        return new_bars
+                'volume': bar['volume'],
+            }
+            for bar in bars_to_parse
+        ]
 
     def get_origin_timestamp(self, symbol: str):
 
         if self.origin_tss[symbol] is not None:
             return self.origin_tss[symbol]
-        else:
-            payload = (
-                f"{self.BASE_URL}{self.BARS_URL}1m&symbol={symbol}&filter=&"
-                f"count=1&startTime=&reverse=false")
+        payload = (
+            f"{self.BASE_URL}{self.BARS_URL}1m&symbol={symbol}&filter=&"
+            f"count=1&startTime=&reverse=false")
 
-            response = requests.get(payload).json()[0]['timestamp']
-            timestamp = int(parser.parse(response).timestamp())
+        response = requests.get(payload).json()[0]['timestamp']
+        timestamp = int(parser.parse(response).timestamp())
 
-            self.logger.info(
-                "BitMEX" + symbol + " origin timestamp: " + str(timestamp))
+        self.logger.info(f"BitMEX{symbol} origin timestamp: {timestamp}")
 
-            return timestamp
+        return timestamp
 
     def get_recent_bars(self, timeframe, symbol, n=1):
 
@@ -199,17 +196,18 @@ class Bitmex(Exchange):
 
         result = requests.get(payload).json()
 
-        bars = []
-        for i in result:
-            bars.append({
-                    'symbol': symbol,
-                    'timestamp': i['timestamp'],
-                    'open': i['open'],
-                    'high': i['high'],
-                    'low': i['low'],
-                    'close': i['close'],
-                    'volume': i['volume']})
-        return bars
+        return [
+            {
+                'symbol': symbol,
+                'timestamp': i['timestamp'],
+                'open': i['open'],
+                'high': i['high'],
+                'low': i['low'],
+                'close': i['close'],
+                'volume': i['volume'],
+            }
+            for i in result
+        ]
 
     def get_recent_ticks(self, symbol, n=1):
 
@@ -230,11 +228,8 @@ class Bitmex(Exchange):
             self.BASE_URL + self.TICKS_URL + symbol + "&count=" +
             "1000&reverse=false&startTime=" + start_iso + "&endTime" + end_iso)
 
-        ticks = []
         initial_result = requests.get(payload).json()
-        for tick in initial_result:
-            ticks.append(tick)
-
+        ticks = list(initial_result)
         # If 1000 ticks in result (max size), keep polling until
         # we get a response with length <1000.
         if len(initial_result) == 1000:
@@ -248,24 +243,21 @@ class Bitmex(Exchange):
                     "1000&reverse=false&startTime=" + ticks[-1]['timestamp'])
 
                 interim_result = requests.get(payload).json()
-                for tick in interim_result:
-                    ticks.append(tick)
-
+                ticks.extend(iter(interim_result))
                 if len(interim_result) != 1000:
                     maxed_out = False
 
         # Check median tick timestamp matches start_iso.
-        median_dt = parser.parse(ticks[int((len(ticks) / 2))]['timestamp'])
+        median_dt = parser.parse(ticks[len(ticks) // 2]['timestamp'])
         match_dt = parser.parse(start_iso)
         if median_dt.minute != match_dt.minute:
             raise Exception("Tick data timestamp error: timestamp mismatch.")
 
-        # Populate list with matching-timestamped ticks only.
-        final_ticks = [
-            i for i in ticks if parser.parse(
-                i['timestamp']).minute == match_dt.minute]
-
-        return final_ticks
+        return [
+            i
+            for i in ticks
+            if parser.parse(i['timestamp']).minute == match_dt.minute
+        ]
 
     def get_position(self, symbol):
         prepared_request = Request(
@@ -399,10 +391,7 @@ class Bitmex(Exchange):
 
             response = self.session.send(request).json()
 
-            if response['ordStatus'] == "Filled":
-                return True
-            else:
-                return False
+            return response['ordStatus'] == "Filled"
         else:
             return False
 
@@ -458,10 +447,12 @@ class Bitmex(Exchange):
                 if "\n" in res['text']:
                     text = res['text'].split("\n")
                     metatype = text[1]
-                elif (
-                    res['text'] == "ENTRY" or res['text'] == "STOP" or
-                        res['text'] == "TAKE_PROFIT" or
-                        res['text'] == "FINAL_TAKE_PROFIT"):
+                elif res['text'] in [
+                    "ENTRY",
+                    "STOP",
+                    "TAKE_PROFIT",
+                    "FINAL_TAKE_PROFIT",
+                ]:
                     metatype = res['text']
                 else:
                     # raise Exception("Order metatype error:", res['text'])
@@ -500,9 +491,7 @@ class Bitmex(Exchange):
             self.api_key,
             self.api_secret)
 
-        response = self.session.send(request)
-
-        return response
+        return self.session.send(request)
 
     def place_bulk_orders(self, orders):
 
@@ -538,8 +527,7 @@ class Bitmex(Exchange):
 
                 res = r.json()
                 if isinstance(res, list):
-                    for item in res:
-                        order_confirmations.append(item)
+                    order_confirmations.extend(iter(res))
                 elif isinstance(res, dict):
                     order_confirmations.append(res)
 
@@ -550,10 +538,9 @@ class Bitmex(Exchange):
 
             elif r.status_code == 503:
                 # Server overloaded, retry after 500ms, dont raise exception.
-                self.logger.info(
-                    str(r.status_code) + " " + r.json()['error']['message'])
+                self.logger.info(f"{str(r.status_code)} " + r.json()['error']['message'])
             else:
-                self.logger.info(str(r.status_code) + " " + str(r.json()))
+                self.logger.info(f"{str(r.status_code)} {str(r.json())}")
 
         updated_orders = []
         if order_confirmations:
@@ -602,63 +589,48 @@ class Bitmex(Exchange):
 
     def cancel_orders(self, order_ids: list):
 
-        if order_ids[0] is not None:
+        if order_ids[0] is None:
+            return None
+        payload = {"orderID": order_ids}
 
-            payload = {"orderID": order_ids}
+        prepared_request = Request(
+            "DELETE",
+            self.BASE_URL_TESTNET + self.ORDERS_URL,
+            json=payload,
+            params='').prepare()
 
-            prepared_request = Request(
-                "DELETE",
-                self.BASE_URL_TESTNET + self.ORDERS_URL,
-                json=payload,
-                params='').prepare()
+        request = self.generate_request_headers(
+            prepared_request,
+            self.api_key,
+            self.api_secret)
 
-            request = self.generate_request_headers(
-                prepared_request,
-                self.api_key,
-                self.api_secret)
+        response = self.session.send(request).json()
 
-            response = self.session.send(request).json()
+        response = [response] if not isinstance(response, list) else response
 
-            response = [response] if not isinstance(response, list) else response
+        cancel_confs = {}
 
-            cancel_confs = {}
+        for i in response:
 
-            for i in response:
+            try:
+                price = i['stopPx'] if i['ordType'] == "Stop" else i['price']
+            except KeyError:
+                print(json.dumps(response, indent=2))
+                raise Exception("Unexpected response format: ", i)
 
-                try:
-                    price = i['stopPx'] if i['ordType'] == "Stop" else i['price']
-                except KeyError:
-                    print(json.dumps(response, indent=2))
-                    raise Exception("Unexpected response format: ", i)
+            try:
+                # Order was filled or cancelled previously.
+                if i['error'] is not None:
+                    if i['error'] == "Unable to cancel order due to existing state: Filled":
+                        cancel_confs[i['orderID']] = {
+                            'venue_id': i['orderID'],
+                            'order_id': i['clOrdID'],
+                            'status': "FILLED",
+                            'order_type': i['ordType'],
+                            'price': price
+                        }
 
-                try:
-                    # Order was filled or cancelled previously.
-                    if i['error'] is not None:
-                        if i['error'] == "Unable to cancel order due to existing state: Filled":
-                            cancel_confs[i['orderID']] = {
-                                'venue_id': i['orderID'],
-                                'order_id': i['clOrdID'],
-                                'status': "FILLED",
-                                'order_type': i['ordType'],
-                                'price': price
-                            }
-
-                        elif i['error'] == "Unable to cancel order due to existing state: Canceled":
-                            cancel_confs[i['orderID']] = {
-                                'venue_id': i['orderID'],
-                                'order_id': i['clOrdID'],
-                                'status': "CANCELLED",
-                                'order_type': i['ordType'],
-                                'price': price
-                            }
-
-                        else:
-                            print(json.dumps(i['error'], indent=2))
-                            raise Exception("Unhandled cancellation message case: ", i['error'])
-
-                # Order state unchanged since placement.
-                except KeyError:
-                    if i['ordStatus'] == "Canceled":
+                    elif i['error'] == "Unable to cancel order due to existing state: Canceled":
                         cancel_confs[i['orderID']] = {
                             'venue_id': i['orderID'],
                             'order_id': i['clOrdID'],
@@ -666,23 +638,35 @@ class Bitmex(Exchange):
                             'order_type': i['ordType'],
                             'price': price
                         }
+
                     else:
-                        print(json.dumps(i['ordStatus'], indent=2))
-                        raise Exception("Unhandled cancellation message case: ", i['ordStatus'])
+                        print(json.dumps(i['error'], indent=2))
+                        raise Exception("Unhandled cancellation message case: ", i['error'])
 
-            return cancel_confs
+            # Order state unchanged since placement.
+            except KeyError:
+                if i['ordStatus'] == "Canceled":
+                    cancel_confs[i['orderID']] = {
+                        'venue_id': i['orderID'],
+                        'order_id': i['clOrdID'],
+                        'status': "CANCELLED",
+                        'order_type': i['ordType'],
+                        'price': price
+                    }
+                else:
+                    print(json.dumps(i['ordStatus'], indent=2))
+                    raise Exception("Unhandled cancellation message case: ", i['ordStatus'])
 
-        else:
-            return None
+        return cancel_confs
 
     def format_orders(self, orders):
 
         formatted = []
+        # TODO: add logic for execInst and stopPx
+        execInst = None
         for order in orders:
             price = self.round_increment(order['price'], order['symbol'])
 
-            # TODO: add logic for execInst and stopPx
-            execInst = None
             stopPx = None
             timeInForce = None
 
@@ -748,16 +732,15 @@ class Bitmex(Exchange):
         path = parsed_url.path
 
         if parsed_url.query:
-            path = path + '?' + parsed_url.query
+            path = f'{path}?{parsed_url.query}'
 
         if isinstance(data, (bytes, bytearray)):
             data = data.decode('utf8')
 
         message = str(request_type).upper() + path + str(nonce) + data
-        signature = hmac.new(bytes(secret, 'utf8'), bytes(message, 'utf8'),
-                             digestmod=hashlib.sha256).hexdigest()
-
-        return signature
+        return hmac.new(
+            bytes(secret, 'utf8'), bytes(message, 'utf8'), digestmod=hashlib.sha256
+        ).hexdigest()
 
     def generate_request_headers(self, request, api_key, api_secret):
         """

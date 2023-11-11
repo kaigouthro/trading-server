@@ -107,8 +107,9 @@ class Strategy:
             timestamp = event.get_bar()['timestamp']
             timeframes = self.get_relevant_timeframes(timestamp)
 
-            self.logger.info("Event timestamp just in: " + str(
-                datetime.utcfromtimestamp(timestamp)))
+            self.logger.info(
+                f"Event timestamp just in: {str(datetime.utcfromtimestamp(timestamp))}"
+            )
 
             # Store trigger timeframes (operating timeframes).
             op_timeframes = copy.deepcopy(timeframes)
@@ -189,10 +190,8 @@ class Strategy:
             if inst == sym:
                 self.logger.info(
                     model.get_name() + ": " + venue + ": " + inst)
-                self.logger.info(
-                    "Operating timeframes: " + str(op_timeframes))
-                self.logger.info(
-                    "Required timeframes: " + str(timeframes))
+                self.logger.info(f"Operating timeframes: {str(op_timeframes)}")
+                self.logger.info(f"Required timeframes: {str(timeframes)}")
 
     def calculate_features(self, event, timeframes):
         """
@@ -246,10 +245,6 @@ class Strategy:
                             self.data[venue][sym][tf][
                                 feature[1].__name__ +
                                 ID] = f.round(6)
-
-                        # Handle boolean feature data.
-                        elif f[0] == "boolean":
-                            pass
 
                         # TODO
 
@@ -349,9 +344,7 @@ class Strategy:
 
             # Add current_bar and DB results to a list.
             rows = [current_bar]
-            for doc in result:
-                rows.append(doc)
-
+            rows.extend(iter(result))
         # Create Dataframe using only stored bars
         if not current_bar:
 
@@ -417,9 +410,7 @@ class Strategy:
 
             # Add current_bar and DB results to a list.
             rows = [bar]
-            for doc in result:
-                rows.append(doc)
-
+            rows.extend(iter(result))
         # Pass cursor to DataFrame constructor.
         df = pd.DataFrame(rows)
 
@@ -443,9 +434,7 @@ class Strategy:
         # Must be ascending=True to grab the first value with iloc[].
         resampled.sort_values(by="timestamp", ascending=False, inplace=True)
 
-        new_row = resampled.iloc[0]
-
-        return new_row
+        return resampled.iloc[0]
 
     def remove_element(self, dictionary, element):
         """
@@ -481,8 +470,7 @@ class Strategy:
             None.
         """
 
-        models = []
-        models.append(EMACrossTestingOnly(logger))
+        models = [EMACrossTestingOnly(logger)]
         self.logger.info("Initialised models.")
         return models
 
@@ -509,15 +497,12 @@ class Strategy:
         end = time.time()
         duration = round(end - start, 5)
 
-        symbolcount = 0
-        for i in self.exchanges:
-            symbolcount += len(i.get_symbols())
-
+        symbolcount = sum(len(i.get_symbols()) for i in self.exchanges)
         # Only log output if data is loaded.
         if not empty:
             self.logger.info(
-                "Initialised " + str(symbolcount * len(self.ALL_TIMEFRAMES)) +
-                " timeframe datasets in " + str(duration) + " seconds.")
+                f"Initialised {str(symbolcount * len(self.ALL_TIMEFRAMES))} timeframe datasets in {str(duration)} seconds."
+            )
 
     def load_local_data(self, exchange, empty=False):
 
@@ -538,21 +523,15 @@ class Strategy:
             None.
         """
 
-        dicts = {}
-        for symbol in exchange.get_symbols():
-
-            # Return empty dataframes.
-            if empty:
-                dicts[symbol] = {
-                    tf: pd.DataFrame() for tf in self.ALL_TIMEFRAMES}
-
-            # Return dataframes with data.
-            elif not empty:
-                dicts[symbol] = {
-                    tf: self.build_dataframe(
-                        exchange, symbol, tf) for tf in self.ALL_TIMEFRAMES}
-
-        return dicts
+        return {
+            symbol: {tf: pd.DataFrame() for tf in self.ALL_TIMEFRAMES}
+            if empty
+            else {
+                tf: self.build_dataframe(exchange, symbol, tf)
+                for tf in self.ALL_TIMEFRAMES
+            }
+            for symbol in exchange.get_symbols()
+        }
 
     def trim_datasets(self):
         """
@@ -580,7 +559,7 @@ class Strategy:
                         diff = size - (self.MAX_LOOKBACK + self.LOOKBACK_PAD)
 
                         # Get list of indicies to drop.
-                        to_drop = [i for i in range(diff)]
+                        to_drop = list(range(diff))
 
                         # Drop rows by index in-place.
                         self.data[venue][sym][tf].drop(
@@ -614,7 +593,7 @@ class Strategy:
         timestamp = time - timedelta(hours=0, minutes=1)
         timeframes = []
 
-        self.logger.info("Timestamp just elapsed: " + str(timestamp))
+        self.logger.info(f"Timestamp just elapsed: {str(timestamp)}")
 
         for i in self.MINUTE_TIMEFRAMES:
             self.minute_timeframe(i, timestamp, timeframes)
@@ -637,7 +616,7 @@ class Strategy:
 
         for i in range(0, 60, minutes):
             if timestamp.minute == i:
-                timeframes.append(str(minutes) + "Min")
+                timeframes.append(f"{str(minutes)}Min")
 
     def hour_timeframe(self, hours, timestamp, timeframes):
         """
@@ -646,7 +625,7 @@ class Strategy:
         """
 
         if timestamp.minute == 0 and timestamp.hour % hours == 0:
-            timeframes.append(str(hours) + "H")
+            timeframes.append(f"{str(hours)}H")
 
     def day_timeframe(self, days, timestamp, timeframes):
         """
@@ -656,7 +635,7 @@ class Strategy:
 
         if (timestamp.minute == 0 and timestamp.hour == 0 and
                 timestamp.day % days == 0):
-            timeframes.append(str(days) + "D")
+            timeframes.append(f"{str(days)}D")
 
     def save_new_signals_to_db(self):
         """
@@ -679,8 +658,8 @@ class Strategy:
             except queue.Empty:
                 if count:
                     self.logger.info(
-                        "Wrote " + str(count) + " new signals to database " +
-                        str(self.db_other.name) + ".")
+                        f"Wrote {str(count)} new signals to database {str(self.db_other.name)}."
+                    )
                 break
 
             else:

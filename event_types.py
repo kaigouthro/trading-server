@@ -34,9 +34,22 @@ class MarketEvent(Event):
         self.bar = bar
 
     def __str__(self):
-        return str("MarketEvent - Exchange: " + self.exchange.get_name() +
-                   " Symbol: " + self.bar['symbol'] + " TS: " +
-                   self.get_datetime() + " Close: " + self.bar['close'])
+        return str(
+            (
+                (
+                    (
+                        (
+                            f"MarketEvent - Exchange: {self.exchange.get_name()} Symbol: "
+                            + self.bar['symbol']
+                        )
+                        + " TS: "
+                    )
+                    + self.get_datetime()
+                    + " Close: "
+                )
+                + self.bar['close']
+            )
+        )
 
     def get_bar(self):
         return self.bar
@@ -77,12 +90,9 @@ class SignalEvent(Event):
         self.note = note                # Signal notes.
 
     def __str__(self):
-        return str("Signal Event: " + self.direction + " Symbol: " +
-                   self.symbol + " Entry price: " + str(self.entry_price) +
-                   " Entry timestamp: " + str(self.entry_ts) + " Timeframe: " +
-                   self.timeframe + " Strategy: " + self.strategy +
-                   " Venue: " + self.venue.get_name() + " Order type: " +
-                   self.entry_type + " Note: " + self.note)
+        return str(
+            f"Signal Event: {self.direction} Symbol: {self.symbol} Entry price: {str(self.entry_price)} Entry timestamp: {str(self.entry_ts)} Timeframe: {self.timeframe} Strategy: {self.strategy} Venue: {self.venue.get_name()} Order type: {self.entry_type} Note: {self.note}"
+        )
 
     def get_signal_dict(self):
         return {
@@ -140,7 +150,7 @@ class OrderEvent(Event):
         self.status = order_dict['status']
 
     def __str__(self):
-        return str(" ")
+        return " "
 
     def get_order_dict(self):
         return self.order_dict
@@ -160,7 +170,7 @@ class FillEvent(Event):
         self.fees = None
 
     def __str__(self):
-        return str(" ")
+        return " "
 
     def get_order_conf(self):
         return self.order_conf

@@ -117,16 +117,15 @@ def generate_request_signature(secret, request_type, url, nonce,
     path = parsed_url.path
 
     if parsed_url.query:
-        path = path + '?' + parsed_url.query
+        path = f'{path}?{parsed_url.query}'
 
     if isinstance(data, (bytes, bytearray)):
         data = data.decode('utf8')
 
     message = str(request_type).upper() + path + str(nonce) + data
-    signature = hmac.new(bytes(secret, 'utf8'), bytes(message, 'utf8'),
-                         digestmod=hashlib.sha256).hexdigest()
-
-    return signature
+    return hmac.new(
+        bytes(secret, 'utf8'), bytes(message, 'utf8'), digestmod=hashlib.sha256
+    ).hexdigest()
 
 
 def generate_request_headers(request, api_key, api_secret):
@@ -238,10 +237,9 @@ def calculate_pnl_by_trade(trade_id):
 
     # Handle two-order trades. Single exit, single entry.
     if len(trade['orders']) == 2:
-        entry_oid = trade['orders'][t_id + "-1"]['order_id']
-        exit_oid = trade['orders'][t_id + "-2"]['order_id']
+        entry_oid = trade['orders'][f"{t_id}-1"]['order_id']
+        exit_oid = trade['orders'][f"{t_id}-2"]['order_id']
 
-    # TODO: Handle trade types with more than 2 orders
     elif len(trade['orders']) >= 3:
         entry_oid = None
         exit_oid = None
@@ -266,7 +264,10 @@ def calculate_pnl_by_trade(trade_id):
         avg_exit = (sum(i['avg_exc_price'] for i in exits) / len(exits)) + 5000
         fees = sum(i['total_fee'] for i in (entries + exits))
         percent_change = abs((avg_entry - avg_exit) / avg_entry) * 100
-        abs_pnl = abs((trade['orders'][t_id + "-1"]['size'] / 100) * percent_change) - fees
+        abs_pnl = (
+            abs(trade['orders'][f"{t_id}-1"]['size'] / 100 * percent_change)
+            - fees
+        )
         if trade['direction'] == "LONG":
             final_pnl = abs_pnl if avg_exit > avg_entry + fees else -abs_pnl
 
@@ -276,10 +277,6 @@ def calculate_pnl_by_trade(trade_id):
         print(avg_entry, avg_exit)
         print(percent_change)
         print(final_pnl)
-
-    # No matching entry or exit executions exist
-    else:
-        pass
 
 
 calculate_pnl_by_trade(1)

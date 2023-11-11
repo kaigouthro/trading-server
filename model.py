@@ -157,8 +157,7 @@ class EMACrossTestingOnly(Model):
 
         """
 
-        self.logger.info(
-            "Running " + str(timeframe) + " " + self.get_name() + ".")
+        self.logger.info(f"Running {timeframe} {self.get_name()}.")
 
         if timeframe in self.operating_timeframes:
 
@@ -173,12 +172,12 @@ class EMACrossTestingOnly(Model):
             for i in range(len(op_data[timeframe].index)):
                 fast = features[i][2]
                 slow = features[i][3]
-                fast_minus_1 = features[i - 1][2]
-                slow_minus_1 = features[i - 1][3]
-                fast_minus_2 = features[i - 2][2]
-                slow_minus_2 = features[i - 2][3]
-
                 if fast is not None and slow is not None:
+
+                    fast_minus_1 = features[i - 1][2]
+                    slow_minus_1 = features[i - 1][3]
+                    fast_minus_2 = features[i - 2][2]
+                    slow_minus_2 = features[i - 2][3]
 
                     # Short cross.
                     if slow > fast:
@@ -241,5 +240,3 @@ class EMACrossTestingOnly(Model):
 
         if result:
             return timeframes
-        else:
-            pass

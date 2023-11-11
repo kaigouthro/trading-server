@@ -53,25 +53,25 @@ def get_recent_bar(timeframe, symbol, n=1):
 
     result = requests.get(payload).json()
 
-    bars = []
-    for i in result:
-        bars.append({
-                'symbol': symbol,
-                'timestamp': i['timestamp'],
-                'open': i['open'],
-                'high': i['high'],
-                'low': i['low'],
-                'close': i['close'],
-                'volume': i['volume']})
-    return bars
+    return [
+        {
+            'symbol': symbol,
+            'timestamp': i['timestamp'],
+            'open': i['open'],
+            'high': i['high'],
+            'low': i['low'],
+            'close': i['close'],
+            'volume': i['volume'],
+        }
+        for i in result
+    ]
 
 
 def seconds_til_next_minute():
     """ Return number of seconds to next minute."""
 
     now = datetime.utcnow().second
-    delay = 60 - now
-    return delay
+    return 60 - now
 
 
 def previous_minute():
@@ -87,10 +87,8 @@ def previous_minute():
 
     # Replace final digit with zero, can be 1 or more during a slow cycle.
     timestamp_str = list(str(timestamp))
-    timestamp_str[len(timestamp_str) - 1] = "0"
-    timestamp = int(''.join(timestamp_str))
-
-    return timestamp
+    timestamp_str[-1] = "0"
+    return int(''.join(timestamp_str))
 
 
 def build_OHLCV(ticks: list, symbol: str, close_as_open=True):
@@ -250,15 +248,8 @@ def get_recent_ticks(symbol, n=1):
     payload = str(
         BASE_URL + TICKS_URL + symbol + "&count=" +
         "1000&reverse=false&startTime=" + start_iso + "&endTime" + end_iso)
-    # print(payload)
-
-    # print("Starting timestamp", start_iso)
-    # print("End timestamp     ", end_iso)
-    ticks = []
     initial_result = requests.get(payload).json()
-    for tick in initial_result:
-        ticks.append(tick)
-
+    ticks = list(initial_result)
     # if 1000 ticks in result (max size), keep polling until
     # we get a response with length <1000
     if len(initial_result) == 1000:
@@ -273,24 +264,21 @@ def get_recent_ticks(symbol, n=1):
                 "1000&reverse=false&startTime=" + ticks[-1]['timestamp'])
 
             interim_result = requests.get(payload).json()
-            for tick in interim_result:
-                ticks.append(tick)
-
+            ticks.extend(iter(interim_result))
             if len(interim_result) != 1000:
                 maxed_out = False
 
     # check median tick timestamp matches start_iso
-    median_dt = parser.parse(ticks[int((len(ticks) / 2))]['timestamp'])
+    median_dt = parser.parse(ticks[len(ticks) // 2]['timestamp'])
     match_dt = parser.parse(start_iso)
     if median_dt.minute != match_dt.minute:
         raise Exception("Tick data timestamp error: timestamp mismatch.")
 
-    # populate list with matching-timestamped ticks only
-    final_ticks = [
-        i for i in ticks if parser.parse(
-            i['timestamp']).minute == match_dt.minute]
-
-    return final_ticks
+    return [
+        i
+        for i in ticks
+        if parser.parse(i['timestamp']).minute == match_dt.minute
+    ]
 
 
 count = 0
