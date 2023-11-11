@@ -88,50 +88,49 @@ class Portfolio:
             stop = self.calculate_stop_price(signal),
             size = self.calculate_position_size(stop[0],
                                                 signal['entry_price'])
-            # Entry order.
-            orders.append(Order(
-                self.logger,
-                trade_id,               # Parent trade ID.
-                None,                   # Order ID as used by venue.
-                signal['symbol'],       # Instrument ticker code.
-                signal['venue'],        # Venue name.
-                signal['direction'],    # LONG or SHORT.
-                size,                   # Size in native denomination.
-                signal['entry_price'],  # Order price.
-                signal['entry_type'],   # LIMIT MARKET STOP_LIMIT/MARKET.
-                "ENTRY",                # ENTRY, TAKE_PROFIT, STOP.
-                stop[0],                # Order invalidation price.
-                False,                  # Trail.
-                False,                  # Reduce-only order.
-                False))                 # Post-only order.
-
-            # Stop order.
-            orders.append(Order(
-                self.logger,
-                trade_id,
-                None,
-                signal['symbol'],
-                signal['venue'],
-                event.inverse_direction(),
-                size,
-                stop[0],
-                "STOP",
-                "STOP",
-                None,
-                signal['trail'],
-                True,
-                False))
-
+            orders.extend(
+                (
+                    Order(
+                        self.logger,
+                        trade_id,  # Parent trade ID.
+                        None,  # Order ID as used by venue.
+                        signal['symbol'],  # Instrument ticker code.
+                        signal['venue'],  # Venue name.
+                        signal['direction'],  # LONG or SHORT.
+                        size,  # Size in native denomination.
+                        signal['entry_price'],  # Order price.
+                        signal['entry_type'],  # LIMIT MARKET STOP_LIMIT/MARKET.
+                        "ENTRY",  # ENTRY, TAKE_PROFIT, STOP.
+                        stop[0],  # Order invalidation price.
+                        False,  # Trail.
+                        False,  # Reduce-only order.
+                        False,
+                    ),
+                    Order(
+                        self.logger,
+                        trade_id,
+                        None,
+                        signal['symbol'],
+                        signal['venue'],
+                        event.inverse_direction(),
+                        size,
+                        stop[0],
+                        "STOP",
+                        "STOP",
+                        None,
+                        signal['trail'],
+                        True,
+                        False,
+                    ),
+                )
+            )
             # Take profit order(s).
             if signal['targets']:
 
-                count = 1
-                for target in signal['targets']:
+                for count, target in enumerate(signal['targets'], start=1):
 
                     # Label final TP order as "FINAL_TAKE_PROFIT".
                     tp_type = "TAKE_PROFIT" if count != len(signal['targets']) else "FINAL_TAKE_PROFIT"
-                    count += 1
-
                     orders.append(Order(
                         self.logger,
                         trade_id,
@@ -148,12 +147,8 @@ class Portfolio:
                         True,
                         False))
 
-            # Set sequential order ID's, based on trade ID.
-            count = 1
-            for order in orders:
-                order.order_id = str(trade_id) + "-" + str(count)
-                count += 1
-
+            for count, order in enumerate(orders, start=1):
+                order.order_id = f"{str(trade_id)}-{str(count)}"
             # Parent trade object:
             trade = SingleInstrumentTrade(
                 self.logger,
@@ -195,14 +190,7 @@ class Portfolio:
                 for order in orders:
                     events.put(OrderEvent(order.get_order_dict()))
 
-        # TODO: handle multi-instrument, multi-venue trades.
-        elif signal['instrument_count'] == 2:
-            pass
-
-        elif signal['instrument_count'] > 2:
-            pass
-
-        self.logger.info("Trade " + str(trade_id) + " registered.")
+        self.logger.info(f"Trade {str(trade_id)} registered.")
 
     def new_fill(self, fill_event):
         """
@@ -361,12 +349,10 @@ class Portfolio:
 
         venue = self.pf['trades'][t_id]['venue']
 
-        cancel_confs = self.exchanges[venue].cancel_orders(v_ids)
-
-        if cancel_confs:
+        if cancel_confs := self.exchanges[venue].cancel_orders(v_ids):
             for v_id in v_ids:
                 if cancel_confs[v_id]['venue_id'] in v_ids:
-                    if cancel_confs[v_id]['status'] == "CANCELLED" or cancel_confs[v_id]['status'] == "FILLED":
+                    if cancel_confs[v_id]['status'] in ["CANCELLED", "FILLED"]:
                         self.pf['trades'][t_id]['active'] = False
                         for o in o_ids:
                             # print("Setting new order status:", o, cancel_confs[v_id]['status'])
@@ -378,17 +364,6 @@ class Portfolio:
                     else:
                         print(json.dumps(cancel_confs[v_id], indent=2))
                         raise Exception("Unexpected response format.")
-
-            # Set price from trade records for cancelled orders
-            # price = self.db_other['trades'].find_one(
-            #     {"trade_id": int(trade_id)}, {"_id": 0})['orders'][order_id]['price']
-
-            # self.pf['trades'][trade_id]['orders'][order_id][
-            #     'price'] = price
-
-        # No active cancellations or order state modification ocurred
-        else:
-            pass
 
     def check_position_open(self, trade_id):
         """
@@ -420,13 +395,13 @@ class Portfolio:
         for specifc instrument at a specific venue.
         """
 
-        close = self.exchanges[
-            self.pf['trades'][trade_id]['venue']].close_position(
-                self.pf['trades'][trade_id]['symbol'],
-                self.pf['trades'][trade_id]['position']['size'],
-                self.pf['trades'][trade_id]['direction'])
-
-        if close:
+        if close := self.exchanges[
+            self.pf['trades'][trade_id]['venue']
+        ].close_position(
+            self.pf['trades'][trade_id]['symbol'],
+            self.pf['trades'][trade_id]['position']['size'],
+            self.pf['trades'][trade_id]['direction'],
+        ):
             self.pf['trades'][trade_id]['position']['size'] = 0
             self.pf['trades'][trade_id]['position']['status'] = "CLOSED"
 
@@ -451,10 +426,9 @@ class Portfolio:
         # Handle two-order trades (single exit, single entry).
         total_orders = len(trade['orders'])
         if total_orders == 2:
-            entry_oid = trade['orders'][trade_id + "-1"]['order_id']
-            exit_oid = trade['orders'][trade_id + "-2"]['order_id']
+            entry_oid = trade['orders'][f"{trade_id}-1"]['order_id']
+            exit_oid = trade['orders'][f"{trade_id}-2"]['order_id']
 
-        # TODO: Handle trade types with more than 2 orders (order, tp(s), exit).
         elif total_orders >= 3:
             entry_oid = None
             exit_oid = None
@@ -474,44 +448,47 @@ class Portfolio:
             exits = [i for i in execs if i['direction'] != trade['direction']]
             manual_exit = True if exits else None
 
-        # Find final pnl figures
-        if entries and exits:
-            avg_entry = sum(i['avg_exc_price'] for i in entries) / len(entries)
-            avg_exit = (sum(i['avg_exc_price'] for i in exits) / len(exits))
-            fees = sum(i['total_fee'] for i in (entries + exits))
-            percent_change = abs((avg_entry - avg_exit) / avg_entry) * 100
-            abs_pnl = abs((trade['orders'][trade_id + "-1"]['size'] / 100) * percent_change) - fees
+        if not entries or not exits:
+            raise Exception(f"No entry or exit executions found for trade {trade_id}.")
 
-            if trade['direction'] == "LONG":
-                final_pnl = abs_pnl if avg_exit > avg_entry + fees else -abs_pnl
+        avg_entry = sum(i['avg_exc_price'] for i in entries) / len(entries)
+        avg_exit = (sum(i['avg_exc_price'] for i in exits) / len(exits))
+        fees = sum(i['total_fee'] for i in (entries + exits))
+        percent_change = abs((avg_entry - avg_exit) / avg_entry) * 100
+        abs_pnl = (
+            abs(trade['orders'][f"{trade_id}-1"]['size'] / 100 * percent_change)
+            - fees
+        )
 
-            elif trade['direction'] == "SHORT":
-                final_pnl = abs_pnl if avg_exit < avg_entry - fees else -abs_pnl
+        if trade['direction'] == "LONG":
+            final_pnl = abs_pnl if avg_exit > avg_entry + fees else -abs_pnl
 
-            # Log trade stats
-            self.pf['current_balance'] += final_pnl
-            self.pf['balance_history'][str(int(time.time()))] = {
-                'amt': final_pnl,
-                'trade_id': trade_id}
-            self.pf['trades'][trade_id]['u_pnl'] = 0
-            self.pf['trades'][trade_id]['r_pnl'] = final_pnl
-            self.pf['trades'][trade_id]['fees'] = fees
-            self.pf['trades'][trade_id]['exposure'] = None
-            self.pf['trades'][trade_id]['exit_price'] = avg_exit
-            self.pf['trades'][trade_id]['systematic_close'] = False if manual_exit else True
+        elif trade['direction'] == "SHORT":
+            final_pnl = abs_pnl if avg_exit < avg_entry - fees else -abs_pnl
 
-            if final_pnl > 0:
-                self.pf['total_winning_trades'] += 1
-            elif final_pnl < 0:
-                self.pf['total_losing_trades'] += 1
+        # Log trade stats
+        self.pf['current_balance'] += final_pnl
+        self.pf['balance_history'][str(int(time.time()))] = {
+            'amt': final_pnl,
+            'trade_id': trade_id}
+        self.pf['trades'][trade_id]['u_pnl'] = 0
+        self.pf['trades'][trade_id]['r_pnl'] = final_pnl
+        self.pf['trades'][trade_id]['fees'] = fees
+        self.pf['trades'][trade_id]['exposure'] = None
+        self.pf['trades'][trade_id]['exit_price'] = avg_exit
+        self.pf['trades'][trade_id]['systematic_close'] = not manual_exit
 
-            self.logger.info("Trade " + trade_id + " returned " + str(final_pnl) + " USD.")
+        if final_pnl > 0:
+            self.pf['total_winning_trades'] += 1
+        elif final_pnl < 0:
+            self.pf['total_losing_trades'] += 1
 
-        else:
-            raise Exception("No entry or exit executions found for trade " + trade_id + ".")
+        self.logger.info(f"Trade {trade_id} returned {str(final_pnl)} USD.")
 
         if manual_exit:
-            self.logger.info("Non-systematic exit orders detected for trade " + trade_id + ". Please manually verify final pnl figure and that all orders are closed. Avoid closing positions or cancelling orders manually.")            
+            self.logger.info(
+                f"Non-systematic exit orders detected for trade {trade_id}. Please manually verify final pnl figure and that all orders are closed. Avoid closing positions or cancelling orders manually."
+            )            
 
     def post_trade_analysis(self, trade_id):
         """
@@ -530,7 +507,7 @@ class Portfolio:
             self.pf['low_balance'] = self.pf['current_balance']
             self.logger.info("New portfolio value all-time-low: " + str(self.pf['current_balance']))        
 
-        balance_history = [i for i in list(self.pf['balance_history'].values())[1:]]
+        balance_history = list(list(self.pf['balance_history'].values())[1:])
 
         if len(balance_history) > 1:
 
@@ -566,7 +543,7 @@ class Portfolio:
             # 'win_loss_ratio'
             if self.pf['total_winning_trades'] and self.pf['total_losing_trades']:
                 self.pf['win_loss_ratio'] = self.pf['total_winning_trades'] / self.pf['total_losing_trades']
-            elif self.pf['total_winning_trades'] and not self.pf['total_losing_trades']:
+            elif self.pf['total_winning_trades']:
                 self.pf['win_loss_ratio'] = self.pf['total_winning_trades']
 
     def verify_portfolio_state(self, portfolio):
@@ -584,18 +561,20 @@ class Portfolio:
         Load portfolio matching ID from database or return empty portfolio.
         """
 
-        portfolio = self.db_other['portfolio'].find_one({"id": ID}, {"_id": 0})
-
-        if portfolio:
+        if portfolio := self.db_other['portfolio'].find_one(
+            {"id": ID}, {"_id": 0}
+        ):
             return portfolio
 
         else:
-            default_portfolio = {
+            return {
                 'id': ID,
                 'balance_history': {
                     str(int(time.time())): {
                         'amt': self.DEFAULT_START,
-                        'trade_id': "initial_deposit"}},
+                        'trade_id': "initial_deposit",
+                    }
+                },
                 'current_balance': self.DEFAULT_START,
                 'starting_balance': self.DEFAULT_START,
                 'peak_balance': self.DEFAULT_START,
@@ -615,11 +594,11 @@ class Portfolio:
                 'max_accepted_drawdown': self.MAX_ACCEPTED_DRAWDOWN,
                 'default_stop': self.DEFAULT_STOP,
                 'model_allocations': {  # Equal allocation by default.
-                    i.get_name(): (100 / len(self.models)) for i in self.models},
+                    i.get_name(): (100 / len(self.models)) for i in self.models
+                },
                 'total_active_trades': 0,
-                'trades': {}}
-
-            return default_portfolio
+                'trades': {},
+            }
 
     def save_portfolio(self, portfolio, output=True):
         """
@@ -650,7 +629,7 @@ class Portfolio:
                 if not self.correlated(signal):
 
                     # Same-asset, same-venue trade conflict checks.
-                    trades = [t for t in self.pf['trades'].values()]
+                    trades = list(self.pf['trades'].values())
                     conflicted_active_trades = [t for t in trades if t['active'] and t['symbol'] == signal['symbol'] and t['venue'] == signal['venue']]
                     conflicted_pending_trades = [t for t in trades if not t['active'] and not t['position'] and t['consent'] != "SUPERCEEDED" and t['symbol'] == signal['symbol'] and t['venue'] == signal['venue']]
 
@@ -683,17 +662,14 @@ class Portfolio:
                             self.logger.info("Existing position matching new signal is not risk-free.")
                             return False, "An existing position matching new signal is not risk-free."
 
-                    # Check if signal should superceeds any pending signals.
                     else:
                         if (signal['symbol'], signal['venue']) not in [(t['symbol'], t['venue']) for t in conflicted_pending_trades]:
                             # All risk checks cleared, free to action signal as is.
                             self.logger.info("New trade within all risk limits.")
-                            return True, "New trade within risk limits."
-
-                        # New signal conflicts with older pending signal(s)
                         else:
                             self.superceed_older_signals(signal, conflicted_pending_trades)
-                            return True, "New trade within risk limits."
+                        return True, "New trade within risk limits."
+
                 else:
                     self.logger.info(
                         "New trade skipped. Correlated position limit reached.")
@@ -712,9 +688,9 @@ class Portfolio:
 
         for trade in conflicted_pending_trades:
 
-            t_id = str(trade['trade_id'])
-
             if trade['signal_timestamp'] < signal['entry_timestamp']:
+
+                t_id = str(trade['trade_id'])
 
                 try:
 
@@ -722,7 +698,9 @@ class Portfolio:
 
                     del self.broker.orders[trade['trade_id']]
                     self.trade_complete(t_id)
-                    self.logger.info("New signal superceeds a pending trade. Trade " + t_id + " cancelled.")
+                    self.logger.info(
+                        f"New signal superceeds a pending trade. Trade {t_id} cancelled."
+                    )
 
                 except:
                     traceback.print_exc()
@@ -762,12 +740,11 @@ class Portfolio:
         if signal['stop_price'] is not None:
             return signal['stop_price']
 
-        else:
-            if signal['direction'] == "LONG":
-                return signal['entry_price'] / 100 * (100 - self.DEFAULT_STOP)
+        if signal['direction'] == "LONG":
+            return signal['entry_price'] / 100 * (100 - self.DEFAULT_STOP)
 
-            elif signal['direction'] == "SHORT":
-                return signal['entry_price'] / 100 * (100 + self.DEFAULT_STOP)
+        elif signal['direction'] == "SHORT":
+            return signal['entry_price'] / 100 * (100 + self.DEFAULT_STOP)
 
     def calculate_position_size(self, stop, entry):
         """
@@ -775,7 +752,7 @@ class Portfolio:
         """
 
         # Fixed percentage per trade risk management.
-        if isinstance(self.RISK_PER_TRADE, int) or isinstance(self.RISK_PER_TRADE, float):
+        if isinstance(self.RISK_PER_TRADE, (int, float)):
 
             account_size = self.pf['current_balance']
             risked_amt = (account_size / 1000) * self.RISK_PER_TRADE
@@ -783,12 +760,10 @@ class Portfolio:
 
             return abs(position_size)
 
-        # TOOD: Kelly criteron risk management.
-        elif self.RISK_PER_TRADE.upper() == "KELLY":
-            pass
-
-        else:
-            raise Exception("RISK_PER_TRADE must be an integer or 'KELLY': " + self.RISK_PER_TRADE)
+        elif self.RISK_PER_TRADE.upper() != "KELLY":
+            raise Exception(
+                f"RISK_PER_TRADE must be an integer or 'KELLY': {self.RISK_PER_TRADE}"
+            )
 
     def update_price(self, events, market_event):
         """
@@ -833,8 +808,8 @@ class Portfolio:
             except queue.Empty:
                 if count:
                     self.logger.info(
-                        "Wrote " + str(count) + " new trades to database " +
-                        str(self.db_other.name) + ".")
+                        f"Wrote {str(count)} new trades to database {str(self.db_other.name)}."
+                    )
                 break
 
             else:
@@ -875,10 +850,10 @@ class Portfolio:
         df = df.tail(self.SNAPSHOT_SIZE)
 
         # Get markers for trades triggered by the current bar
-        entry_marker = [np.nan for i in range(self.SNAPSHOT_SIZE)]
+        entry_marker = [np.nan for _ in range(self.SNAPSHOT_SIZE)]
         entry_marker[-1] = trade['entry_price']
         stop = None
-        stop_marker = [np.nan for i in range(self.SNAPSHOT_SIZE)]
+        stop_marker = [np.nan for _ in range(self.SNAPSHOT_SIZE)]
         for order in trade['orders'].values():
             if order['order_type'] == "STOP":
                 stop = order['price']
@@ -910,11 +885,11 @@ class Portfolio:
         options = [[str(trade['trade_id']) + " - Accept", str(trade['trade_id']) + " - Veto"]]
 
         try:
-            self.telegram.send_image(filename + ".png", message)
-            if within_risk_limits is True:
+            self.telegram.send_image(f"{filename}.png", message)
+            if within_risk_limits:
                 self.telegram.send_option_keyboard(options)
             else:
-                self.telegram.send_message("Trade would exceed risk limits. " + msg)
+                self.telegram.send_message(f"Trade would exceed risk limits. {msg}")
 
         except Exception as ex:
             self.logger.info("Failed to send setup image via telegram.")
@@ -931,12 +906,11 @@ class Portfolio:
                             'linewidths': 0.5}
 
         # Add technical feature data (indicator values, etc).
-        for col in list(df):
-            if (
-                col != "Open" and col != "High" and col != "Low"
-                    and col != "Close" and col != "Volume"):
-                adps.append(mpl.make_addplot(df[col]))
-
+        adps.extend(
+            mpl.make_addplot(df[col])
+            for col in list(df)
+            if col not in ["Open", "High", "Low", "Close", "Volume"]
+        )
         # Add entry marker
         adps.append(mpl.make_addplot(
             entry_marker, type='scatter', markersize=500, marker="_",

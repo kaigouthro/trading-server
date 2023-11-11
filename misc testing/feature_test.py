@@ -33,17 +33,16 @@ def cluster_filter(levels: list, t: float, multipass: bool):
     # Identify strong clusters of 3 or more levels (multipass).
     if multipass:
         flattened = [item for sublist in temp_levels for item in sublist]
-        c_count = 0
         to_append = []
-        for cluster in temp_levels:
+        for c_count, cluster in enumerate(temp_levels):
             for lvl_1 in cluster:
                 range_max = lvl_1 + lvl_1 * t
                 range_min = lvl_1 - lvl_1 * t
-                for lvl_2 in flattened:
-                    if lvl_2 >= range_min and lvl_2 <= range_max:
-                        to_append.append([c_count, lvl_2])
-            c_count += 1
-
+                to_append.extend(
+                    [c_count, lvl_2]
+                    for lvl_2 in flattened
+                    if lvl_2 >= range_min and lvl_2 <= range_max
+                )
         # Add levels to their respective clusters and remove duplicates.
         for pair in to_append:
             temp_levels[pair[0]].append(pair[1])
@@ -152,7 +151,7 @@ def sr_levels(bars, n=8, t=0.02, s=3, f=3):
     # Filter levels f times.
     levels = np.sort(np.append(support, resistance))
     filtered_levels = cluster_filter(levels, t, multipass=True)
-    for i in range(f - 1):
+    for _ in range(f - 1):
         filtered_levels = cluster_filter(filtered_levels, t, multipass=True)
 
     return filtered_levels

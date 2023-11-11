@@ -124,12 +124,13 @@ class strategy_test:
         """Create and return a dictionary of dataframes for all symbols and
         timeframes for the given exchange."""
 
-        dicts = {}
-        for symbol in exchange.get_symbols():
-            dicts[symbol] = {
-                tf: self.build_dataframe(
-                    exchange, symbol, tf) for tf in self.ALL_TIMEFRAMES}
-        return dicts
+        return {
+            symbol: {
+                tf: self.build_dataframe(exchange, symbol, tf)
+                for tf in self.ALL_TIMEFRAMES
+            }
+            for symbol in exchange.get_symbols()
+        }
 
     def build_dataframe(self, exc, sym, tf, lookback=5):
         """Return a dataframe of size lookback for the given symbol (sym),

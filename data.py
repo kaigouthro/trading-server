@@ -97,8 +97,8 @@ class Datahandler:
         duration = round(end_parse - start_parse, 5)
 
         self.logger.info(
-            "Parsed " + str(self.total_instruments) +
-            " instruments' ticks in " + str(duration) + " seconds.")
+            f"Parsed {str(self.total_instruments)} instruments' ticks in {str(duration)} seconds."
+        )
         self.track_tick_processing_performance(duration)
 
         # Wrap new 1 min bars in market events.
@@ -154,10 +154,10 @@ class Datahandler:
         if output:
             self.logger.info("Started data diagnostics.")
         for exchange in self.exchanges:
-            for symbol in exchange.get_symbols():
-                reports.append(self.data_status_report(
-                    exchange, symbol, output))
-
+            reports.extend(
+                self.data_status_report(exchange, symbol, output)
+                for symbol in exchange.get_symbols()
+            )
         # TODO: oll different venues simultaneously with a processpool
 
         # Resolve discrepancies in stored data.
@@ -192,8 +192,8 @@ class Datahandler:
 
             except queue.Empty:
                 self.logger.info(
-                    "Wrote " + str(count) + " new bars to database " +
-                    str(self.db.name) + ".")
+                    f"Wrote {str(count)} new bars to database {str(self.db.name)}."
+                )
                 break
 
             else:
@@ -251,7 +251,7 @@ class Datahandler:
 
         # Find gaps (missing bars) in stored data.
         actual = {doc['timestamp'] for doc in result}
-        required = {i for i in range(origin_ts, current_ts + 60, 60)}
+        required = set(range(origin_ts, current_ts + 60, 60))
         gaps = required.difference(actual)
 
         # Find bars with all null values (if ws drop out, or no trades).
@@ -268,14 +268,10 @@ class Datahandler:
             self.logger.info(
                 "Exchange & instrument:......" +
                 exchange.get_name() + ":" + str(symbol))
-            self.logger.info(
-                "Total required bars:........" + str(len(required)))
-            self.logger.info(
-                "Total locally stored bars:.." + str(total_stored))
-            self.logger.info(
-                    "Total null-value bars:......" + str(len(null_bars)))
-            self.logger.info(
-                "Total missing bars:........." + str(len(gaps)))
+            self.logger.info(f"Total required bars:........{len(required)}")
+            self.logger.info(f"Total locally stored bars:..{str(total_stored)}")
+            self.logger.info(f"Total null-value bars:......{len(null_bars)}")
+            self.logger.info(f"Total missing bars:.........{len(gaps)}")
 
         return {
             "exchange": exchange,
@@ -312,8 +308,6 @@ class Datahandler:
             Timestamp mismatch error.
         """
 
-        # Sort timestamps into sequential bins (to reduce # of polls).
-        poll_count = 1
         if len(report['gaps']) != 0:
             bins = [
                 list(g) for k, g in groupby(
@@ -331,19 +325,23 @@ class Datahandler:
 
             # Poll venue API for replacement bars.
             bars_to_store = []
-            for i in bins:
+            for poll_count, i in enumerate(bins, start=1):
                 # Progress indicator.
                 if poll_count:
                     self.logger.info(
-                        "Poll " + str(
-                            poll_count) + " of " + total_polls + " " +
-                        str(report['symbol']) + " " + str(
-                            report['exchange'].get_name()))
+                        (
+                            (
+                                f"Poll {str(poll_count)} of {total_polls} "
+                                + str(report['symbol'])
+                            )
+                            + " "
+                        )
+                        + str(report['exchange'].get_name())
+                    )
                 try:
                     bars = report['exchange'].get_bars_in_period(
                         report['symbol'], i[0], len(i))
-                    for bar in bars:
-                        bars_to_store.append(bar)
+                    bars_to_store.extend(iter(bars))
                     # Reset stagger to base after successful poll.
                     stagger = 2
                     time.sleep(stagger + 0.3)
@@ -366,8 +364,6 @@ class Datahandler:
                             delay *= stagger
                             if i == timeout - 1:
                                 raise Exception("Polling timeout.")
-                poll_count += 1
-
             # Sanity check, check that the retreived bars match gaps.
             self.logger.info("Verifying new data...")
             timestamps = [i['timestamp'] for i in bars_to_store]
@@ -398,8 +394,11 @@ class Datahandler:
                 doc_count = doc_count_after - doc_count_before
 
                 self.logger.info(
-                    "Saved " + str(doc_count) + " missing " +
-                    report['symbol'] + " bars.")
+                    (
+                        (f"Saved {str(doc_count)} missing " + report['symbol'])
+                        + " bars."
+                    )
+                )
                 return True
 
             else:
@@ -454,9 +453,7 @@ class Datahandler:
 
         final_bins = []
         for i in split_bins:
-            for j in i:
-                final_bins.append(j)
-
+            final_bins.extend(iter(i))
         # Remove the oversize bins by their indices, add the smaller split bins
         for i in indices_to_remove:
             del bins[i]
@@ -485,82 +482,75 @@ class Datahandler:
             Timestamp mismatch error.
         """
 
-        if len(report['null_bars']) != 0:
-            # sort timestamps into sequential bins (to reduce polls)
-            bins = [
-                list(g) for k, g in groupby(
-                    sorted(report['null_bars']),
-                    key=lambda n, c=count(0, 60): n - next(c))]
-
-            delay = 1  # wait time before attmepting to re-poll after error
-            stagger = 2  # delay co-efficient
-            timeout = 10  # number of times to repoll before exception raised.
-
-            # poll exchange REST endpoint for missing bars
-            bars_to_store = []
-            for i in bins:
-                try:
-                    bars = report['exchange'].get_bars_in_period(
-                        report['symbol'], i[0], len(i))
-                    for bar in bars:
-                        bars_to_store.append(bar)
-                    stagger = 2  # reset stagger to base after successful poll
-                    time.sleep(stagger)
-                except Exception as e:
-                    # retry poll with an exponential delay after each error
-                    for i in range(timeout):
-                        try:
-                            time.sleep(delay)
-                            bars = report['exchange'].get_bars_in_period(
-                                report['symbol'], i[0], len(i))
-                            for bar in bars:
-                                bars_to_store.append(bar)
-                            stagger = 2
-                            break
-                        except Exception as e:
-                            delay *= stagger
-                            if i == timeout - 1:
-                                raise Exception("Polling timeout.")
-
-            # sanity check, check that the retreived bars match gaps
-            timestamps = [i['timestamp'] for i in bars_to_store]
-            timestamps = sorted(timestamps)
-            bars = sorted(report['null_bars'])
-            if timestamps == bars:
-                doc_count = 0
-                for bar in bars_to_store:
-                    try:
-                        query = {"$and": [
-                            {"symbol": bar['symbol']},
-                            {"timestamp": bar['timestamp']}]}
-                        new_values = {"$set": {
-                            "open": bar['open'],
-                            "high": bar['high'],
-                            "low": bar['low'],
-                            "close": bar['close'],
-                            "volume": bar['volume']}}
-                        self.db_collections[
-                            report['exchange'].get_name()].update_one(
-                                query, new_values)
-                        doc_count += 1
-                    except pymongo.errors.DuplicateKeyError:
-                        continue  # skip duplicates if they exist
-                doc_count_after = (
-                    self.db_collections[report[
-                        'exchange'].get_name()].count_documents(
-                            {"symbol": report['symbol']}))
-                self.logger.info(
-                    "Replaced " + str(doc_count) + " " + report['symbol'] +
-                    " null bars.")
-                return True
-            else:
-                raise Exception(
-                    "Fetched bars do not match missing timestamps.")
-                self.logger.info(
-                    "Bars length: " + str(len(bars)) +
-                    " Timestamps length: " + str(len(timestamps)))
-        else:
+        if len(report['null_bars']) == 0:
             return False
+        # sort timestamps into sequential bins (to reduce polls)
+        bins = [
+            list(g) for k, g in groupby(
+                sorted(report['null_bars']),
+                key=lambda n, c=count(0, 60): n - next(c))]
+
+        delay = 1  # wait time before attmepting to re-poll after error
+        stagger = 2  # delay co-efficient
+        timeout = 10  # number of times to repoll before exception raised.
+
+        # poll exchange REST endpoint for missing bars
+        bars_to_store = []
+        for i in bins:
+            try:
+                bars = report['exchange'].get_bars_in_period(
+                    report['symbol'], i[0], len(i))
+                bars_to_store.extend(iter(bars))
+                stagger = 2  # reset stagger to base after successful poll
+                time.sleep(stagger)
+            except Exception as e:
+                    # retry poll with an exponential delay after each error
+                for i in range(timeout):
+                    try:
+                        time.sleep(delay)
+                        bars = report['exchange'].get_bars_in_period(
+                            report['symbol'], i[0], len(i))
+                        bars_to_store.extend(iter(bars))
+                        stagger = 2
+                        break
+                    except Exception as e:
+                        delay *= stagger
+                        if i == timeout - 1:
+                            raise Exception("Polling timeout.")
+
+        # sanity check, check that the retreived bars match gaps
+        timestamps = [i['timestamp'] for i in bars_to_store]
+        timestamps = sorted(timestamps)
+        bars = sorted(report['null_bars'])
+        if timestamps != bars:
+            raise Exception(
+                "Fetched bars do not match missing timestamps.")
+        doc_count = 0
+        for bar in bars_to_store:
+            try:
+                query = {"$and": [
+                    {"symbol": bar['symbol']},
+                    {"timestamp": bar['timestamp']}]}
+                new_values = {"$set": {
+                    "open": bar['open'],
+                    "high": bar['high'],
+                    "low": bar['low'],
+                    "close": bar['close'],
+                    "volume": bar['volume']}}
+                self.db_collections[
+                    report['exchange'].get_name()].update_one(
+                        query, new_values)
+                doc_count += 1
+            except pymongo.errors.DuplicateKeyError:
+                continue  # skip duplicates if they exist
+        doc_count_after = (
+            self.db_collections[report[
+                'exchange'].get_name()].count_documents(
+                    {"symbol": report['symbol']}))
+        self.logger.info(
+            f"Replaced {str(doc_count)} " + report['symbol'] + " null bars."
+        )
+        return True
 
     def split_oversize_bins(self, original_bins, max_bin_size):
         """Given a list of lists (timestamp bins), if any top-level
@@ -589,9 +579,7 @@ class Datahandler:
 
         final_bins = []
         for i in split_bins:
-            for j in i:
-                final_bins.append(j)
-
+            final_bins.extend(iter(i))
         # Remove the oversize bins by their indices, add the smaller split bins
         for i in indices_to_remove:
             del bins[i]
@@ -613,11 +601,7 @@ class Datahandler:
             None.
         """
 
-        total = 0
-        for exchange in self.exchanges:
-            total += len(exchange.symbols)
-
-        return total
+        return sum(len(exchange.symbols) for exchange in self.exchanges)
 
     def get_instrument_symbols(self):
         """
@@ -632,8 +616,8 @@ class Datahandler:
         """
         instruments = []
         for exchange in self.exchanges:
-            for symbol in exchange.get_symbols():
-                instruments.append(
-                    exchange.get_name() + "-" + symbol)
-
+            instruments.extend(
+                f"{exchange.get_name()}-{symbol}"
+                for symbol in exchange.get_symbols()
+            )
         return instruments

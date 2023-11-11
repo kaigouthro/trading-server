@@ -13,14 +13,7 @@ coll = db_other['portfolio']
 
 pf = coll.find_one({}, {"_id": 0})  # portfolio
 
-# orders = pf['trades'][trade_id]['orders'].values()
-# entry, stop = None, None
-# exit = pf['trades'][trade_id]['exit_price']
-
-
-balance_history = [i for i in list(pf['balance_history'].values())[1:]]
-if balance_history:
-
+if balance_history := list(list(pf['balance_history'].values())[1:]):
     winners_r, losers_r, total_r = [], [], []
 
     for transaction in balance_history:
@@ -48,10 +41,11 @@ if balance_history:
     pf['avg_r_per_loser'] = sround(sum(losers_r) / len(losers_r), 2)
 
     # 'win_loss_ratio'
-    if pf['total_winning_trades'] and pf['total_losing_trades']:
-        pf['win_loss_ratio'] = pf['total_winning_trades'] / pf['total_losing_trades']
-    elif pf['total_winning_trades'] and not pf['total_losing_trades']:
-        pf['win_loss_ratio'] = pf['total_winning_trades']
+    if pf['total_winning_trades']:
+        if pf['total_losing_trades']:
+            pf['win_loss_ratio'] = pf['total_winning_trades'] / pf['total_losing_trades']
+        else:
+            pf['win_loss_ratio'] = pf['total_winning_trades']
 
     # 'gain_to_pain_ratio'
     # TODO

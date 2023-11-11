@@ -118,7 +118,7 @@ class Position:
         self.fees = None
 
     def __str__(self):
-        return str(" ")
+        return " "
 
     def get_fill_conf(self):
         return self.fill_conf

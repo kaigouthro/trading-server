@@ -42,18 +42,12 @@ app = Flask(__name__)
 # Portfolio data route
 @app.route("/portfolio", methods=['GET'])
 def return_portfolio():
-    if request.method == 'GET':
-
-        portfolio = db_other['portfolio'].find_one({"id": 1}, {"_id": 0})
-        if portfolio:
-            return json.dumps(portfolio), 200, {'ContentType':'application/json'}
-        else:
-            return json.dumps({'success': False, 'message': 'Not found'}),
-            404, {'ContentType':'application/json'}
-
-    else:
+    if request.method != 'GET':
         return json.dumps({'success': False, 'message': 'Invalid method'}),
-        403, {'ContentType':'application/json'}
+    if portfolio := db_other['portfolio'].find_one({"id": 1}, {"_id": 0}):
+        return json.dumps(portfolio), 200, {'ContentType':'application/json'}
+    else:
+        return json.dumps({'success': False, 'message': 'Not found'}),
 
 
 # Portfolio settings route
@@ -66,7 +60,6 @@ def change_portfolio_settings():
 
     else:
         return json.dumps({'success': False, 'message': 'Invalid method'}),
-        403, {'ContentType':'application/json'}
 
 
 if __name__ == "__main__":

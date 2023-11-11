@@ -100,10 +100,8 @@ class Exchange(ABC):
 
         # # replace final digit with zero, can be 1 or more during a slow cycle
         timestamp_str = list(str(timestamp))
-        timestamp_str[len(timestamp_str) - 1] = "0"
-        timestamp = int(''.join(timestamp_str))
-
-        return timestamp
+        timestamp_str[-1] = "0"
+        return int(''.join(timestamp_str))
 
     def seconds_til_next_minute(self):
         """
@@ -118,8 +116,7 @@ class Exchange(ABC):
         """
 
         now = datetime.datetime.utcnow().second
-        delay = 60 - now - 1
-        return delay
+        return 60 - now - 1
 
     def build_OHLCV(
             self, ticks: list, symbol: str, close_as_open=True, offset=60):
@@ -146,66 +143,64 @@ class Exchange(ABC):
 
         """
 
-        if ticks:
-
-            if close_as_open:
+        if not ticks:
+            return {
+                'symbol': symbol,
+                'timestamp': self.previous_minute() + offset,
+                'open': None,
+                'high': None,
+                'low': None,
+                'close': None,
+                'volume': 0,
+            }
+        if close_as_open:
 
                 # Convert incoming timestamp format if required.
-                if type(ticks[0]['timestamp']) is not datetime:
-                    median = parser.parse(
-                        ticks[int((len(ticks) / 2))]['timestamp'])
-                    first = parser.parse(ticks[0]['timestamp'])
-                else:
-                    median = ticks[int((len(ticks) / 2))]['timestamp']
-                    first = ticks[0]['timestamp']
+            if type(ticks[0]['timestamp']) is not datetime:
+                median = parser.parse(ticks[len(ticks) // 2]['timestamp'])
+                first = parser.parse(ticks[0]['timestamp'])
+            else:
+                median = ticks[len(ticks) // 2]['timestamp']
+                first = ticks[0]['timestamp']
 
-                # This should be the most common case if close_as_open=True.
-                # Dont include the first tick for volume and price calc.
-                if first.minute == median.minute - 1:
-                    volume = sum(i['size'] for i in ticks) - ticks[0]['size']
-                    prices = [i['price'] for i in ticks]
-                    prices.pop(0)
+            # This should be the most common case if close_as_open=True.
+            # Dont include the first tick for volume and price calc.
+            if first.minute == median.minute - 1:
+                volume = sum(i['size'] for i in ticks) - ticks[0]['size']
+                prices = [i['price'] for i in ticks]
+                prices.pop(0)
 
-                # If the timestamps are same, may mean there were no early
-                # trades, proceed as though close_as_open=False
-                elif first.minute == median.minute:
-                    volume = sum(i['size'] for i in ticks)
-                    prices = [i['price'] for i in ticks]
-
-                # There's a timing/data problem is neither case above is true.
-                else:
-                    raise Exception(
-                        "Tick data timestamp error: timestamp mismatch." +
-                        "\nFirst tick minute: " + str(first) +
-                        "\nMedian tick minute: " + str(median))
-
-            elif not close_as_open or close_as_open is False:
+            # If the timestamps are same, may mean there were no early
+            # trades, proceed as though close_as_open=False
+            elif first.minute == median.minute:
                 volume = sum(i['size'] for i in ticks)
                 prices = [i['price'] for i in ticks]
 
-            high_price = max(prices) if len(prices) >= 1 else None
-            low_price = min(prices) if len(prices) >= 1 else None
-            open_price = ticks[0]['price'] if len(prices) >= 1 else None
-            close_price = ticks[-1]['price'] if len(prices) >= 1 else None
+            # There's a timing/data problem is neither case above is true.
+            else:
+                raise Exception(
+                    "Tick data timestamp error: timestamp mismatch." +
+                    "\nFirst tick minute: " + str(first) +
+                    "\nMedian tick minute: " + str(median))
 
-            bar = {'symbol': symbol,
-                   'timestamp': self.previous_minute() + offset,
-                   'open': open_price,
-                   'high': high_price,
-                   'low': low_price,
-                   'close': close_price,
-                   'volume': volume}
-            return bar
+        else:
+            volume = sum(i['size'] for i in ticks)
+            prices = [i['price'] for i in ticks]
 
-        elif ticks is None or not ticks:
-            bar = {'symbol': symbol,
-                   'timestamp': self.previous_minute() + offset,
-                   'open': None,
-                   'high': None,
-                   'low': None,
-                   'close': None,
-                   'volume': 0}
-            return bar
+        high_price = max(prices) if len(prices) >= 1 else None
+        low_price = min(prices) if len(prices) >= 1 else None
+        open_price = ticks[0]['price'] if len(prices) >= 1 else None
+        close_price = ticks[-1]['price'] if len(prices) >= 1 else None
+
+        return {
+            'symbol': symbol,
+            'timestamp': self.previous_minute() + offset,
+            'open': open_price,
+            'high': high_price,
+            'low': low_price,
+            'close': close_price,
+            'volume': volume,
+        }
 
     def finished_parsing_ticks(self):
         return self.finished_parsing_ticks
@@ -230,8 +225,8 @@ class Exchange(ABC):
         """
 
         venue_name = self.get_name().upper()
-        key = os.environ[venue_name + '_API_KEY']
-        secret = os.environ[venue_name + '_API_SECRET']
+        key = os.environ[f'{venue_name}_API_KEY']
+        secret = os.environ[f'{venue_name}_API_SECRET']
 
         return key, secret
 
@@ -242,13 +237,7 @@ class Exchange(ABC):
 
         inc = self.symbol_min_increment[symbol]
 
-        if number < 1:
-            quote = number
-        else:
-            quote = (number // inc) * inc
-
-        # print("Rounded quote:", quote)
-        return quote
+        return number if number < 1 else (number // inc) * inc
 
 
     @abstractmethod

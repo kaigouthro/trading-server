@@ -92,44 +92,37 @@ class Broker:
                 # Get stored trade state from DB
                 trade = dict(self.db_other['trades'].find_one({"trade_id": trade_id}, {"_id": 0}))
 
-                # Count received orders for that trade
-                order_count = len(self.orders[trade_id])
-                venue = self.orders[trade_id][0]['venue']
-
                 # User has accepted the trade.
                 if trade['consent'] is True:
+                    # Count received orders for that trade
+                    order_count = len(self.orders[trade_id])
                     if order_count == trade['order_count']:
-                        self.logger.info(
-                            "Trade " + str(trade_id) + " order batch ready.")
+                        self.logger.info(f"Trade {str(trade_id)} order batch ready.")
 
-                        # Place orders.
-                        order_confs = self.exchanges[venue].place_bulk_orders(
-                            self.orders[trade_id])
+                        venue = self.orders[trade_id][0]['venue']
 
-                        # Update portfolio state with order placement details.
-                        if order_confs:
+                        if order_confs := self.exchanges[venue].place_bulk_orders(
+                            self.orders[trade_id]
+                        ):
                             self.pf.new_order_conf(order_confs, events)
-                            self.logger.info("Orders for trade " + str(trade_id) + " submitted to venue.")
+                            self.logger.info(f"Orders for trade {str(trade_id)} submitted to venue.")
 
                         else:
-                            self.logger.info("Order submission for " + str(trade_id) + " may have failed or only partially succeeded.")
-                            # raise Exception("Caution: manual order and position check required for trade " + str(trade_id) + ".")
-
+                            self.logger.info(
+                                f"Order submission for {str(trade_id)} may have failed or only partially succeeded."
+                            )
                         to_remove.append(trade_id)
 
                     else:
-                        self.logger.info("Order batch for trade " + str(trade_id) + " not yet ready.")
+                        self.logger.info(f"Order batch for trade {str(trade_id)} not yet ready.")
 
-                # User has not yet made a decision.
                 elif trade['consent'] is None:
-                    self.logger.info("Trade " + str(trade_id) + " awaiting user review.")
+                    self.logger.info(f"Trade {str(trade_id)} awaiting user review.")
 
-                # User has rejected the trade.
                 elif trade['consent'] is False:
                     self.pf.trade_complete(trade_id)
                     to_remove.append(trade_id)
 
-                # Unkown consent case
                 else:
                     raise Exception("Unknown case for trade consent:", trade['consent'])
 
@@ -138,7 +131,6 @@ class Broker:
                 del self.orders[t_id]
 
         else:
-            pass
             self.logger.info("No trades awaiting review.")
 
     def check_overdue_trades(self):
@@ -190,8 +182,6 @@ class Broker:
             # Response must have came from a whitelisted account.
             try:
                 if u_id in self.tg.whitelist:
-
-                    # Response ID must match trade ID.
                     if str(response[msg_type]['text'][:len(t_id)]) == t_id:
 
                         # Response timestamp must be greater than signal trigger time.
@@ -210,12 +200,13 @@ class Broker:
                                     self.pf.pf['trades'][t_id]['consent'] = False
 
                                 else:
-                                    self.logger.info("Unknown input received as response to trade " + t_id + " consent message: " + decision[1])
+                                    self.logger.info(
+                                        f"Unknown input received as response to trade {t_id} consent message: {decision[1]}"
+                                    )
 
                             except Exception:
                                 traceback.print_exc()
 
-            # Unexpected response format in updates
             except Exception:
                 traceback.print_exc()
                 print(json.dumps(response))
@@ -275,15 +266,15 @@ class FillAgent:
 
                     active_venues.add(self.pf['trades'][t_id]['venue'])
 
-                    for o_id in self.pf['trades'][t_id]['orders'].keys():
-                        portfolio_order_snapshot.append((
-                            # (v_id, o_id, status, venue name)
-                            self.pf['trades'][t_id]['orders'][o_id][
-                                'venue_id'],
+                    portfolio_order_snapshot.extend(
+                        (
+                            self.pf['trades'][t_id]['orders'][o_id]['venue_id'],
                             o_id,
                             self.pf['trades'][t_id]['orders'][o_id]['status'],
-                            self.pf['trades'][t_id]['orders'][o_id]['venue']))
-
+                            self.pf['trades'][t_id]['orders'][o_id]['venue'],
+                        )
+                        for o_id in self.pf['trades'][t_id]['orders'].keys()
+                    )
             # Get orders from all venues with active trades.
             orders = []
             for venue in list(active_venues):
@@ -292,46 +283,36 @@ class FillAgent:
             # Snapshot actual order state.
             actual_order_snapshot = []
             for order in portfolio_order_snapshot:
-                for conf in orders:
-                    if conf['venue_id'] == order[0]:
-                        actual_order_snapshot.append((
-                            conf['venue_id'],
-                            conf['order_id'],
-                            conf['status'],
-                            conf))
-
+                actual_order_snapshot.extend(
+                    (conf['venue_id'], conf['order_id'], conf['status'], conf)
+                    for conf in orders
+                    if conf['venue_id'] == order[0]
+                )
             # Compare actual order state to local portfolio state.
             for port, actual in zip(
                     portfolio_order_snapshot, actual_order_snapshot):
-                if port[0] == actual[0]:
-                    if port[2] != actual[2]:
-
-                        # Order has been filled or cancelled.
-                        if (
-                            actual[2] == "FILLED" or actual[2] == "PARTIAL"
-                                or actual[2] == "CANCELLED"):
-
-                            # Derive the trade ID from order id.
-                            fill_conf = actual[3]
-                            fill_conf['trade_id'] = actual[1].partition("-")[0]
-
-                            # Store the new fill event.
-                            self.fills.append(FillEvent(fill_conf))
-
-                        else:
-                            # Something wrong with code if status is wrong.
-                            raise Exception(
-                                "Order status code error:", actual[2])
-
-                else:
+                if port[0] != actual[0]:
                     # Something critically wrong if theres a missing venue ID.
                     raise Exception("Order ID mistmatch. \nPortfolio v_id:",
                                     port[0], "Actual v_id:", actual[0])
+
+                if port[2] != actual[2]:
+
+                    if actual[2] not in ["FILLED", "PARTIAL", "CANCELLED"]:
+                        # Something wrong with code if status is wrong.
+                        raise Exception(
+                            "Order status code error:", actual[2])
+
+                    # Derive the trade ID from order id.
+                    fill_conf = actual[3]
+                    fill_conf['trade_id'] = actual[1].partition("-")[0]
+
+                    # Store the new fill event.
+                    self.fills.append(FillEvent(fill_conf))
 
             # Wait til next minute elapses.
             sleep(self.seconds_til_next_minute())
 
     def seconds_til_next_minute(self):
         now = datetime.datetime.utcnow().second
-        delay = 60 - now
-        return delay
+        return 60 - now

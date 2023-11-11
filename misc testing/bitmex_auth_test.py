@@ -39,16 +39,15 @@ def generate_request_signature(secret, request_type, url, nonce,
     path = parsed_url.path
 
     if parsed_url.query:
-        path = path + '?' + parsed_url.query
+        path = f'{path}?{parsed_url.query}'
 
     if isinstance(data, (bytes, bytearray)):
         data = data.decode('utf8')
 
     message = str(request_type).upper() + path + str(nonce) + data
-    signature = hmac.new(bytes(secret, 'utf8'), bytes(message, 'utf8'),
-                         digestmod=hashlib.sha256).hexdigest()
-
-    return signature
+    return hmac.new(
+        bytes(secret, 'utf8'), bytes(message, 'utf8'), digestmod=hashlib.sha256
+    ).hexdigest()
 
 
 def generate_request_headers(request, api_key, api_secret):

@@ -93,10 +93,9 @@ class Features:
 
         self.check_bars_type(bars)
 
-        convergent = False
-        return convergent
+        return False
 
-    def sr_levels(bars, n=8, t=0.02, s=3, f=3):
+    def sr_levels(self, n=8, t=0.02, s=3, f=3):
         """
         Find support and resistance levels using smoothed close price.
 
@@ -121,10 +120,10 @@ class Features:
             n += 1
 
         # Find number of bars.
-        n_ltp = bars.close.values.shape[0]
+        n_ltp = self.close.values.shape[0]
 
         # Smooth close data.
-        ltp_smoothed = smooth(bars.close.values, (n + 1), s)
+        ltp_smoothed = smooth(self.close.values, n + 1, s)
 
         # Find delta (difference in adjacent prices).
         ltp_delta = np.zeros(n_ltp)
@@ -153,28 +152,26 @@ class Features:
             # Detect local maxima. If two points match, its a level.
             if r_1 == (n / 2) and r_2 == (n / 2):
                 try:
-                    resistance.append(bars.close.values[i + (int((n / 2)) - 1)])
-                # Catch empty list error if no levels are present.
+                    resistance.append(self.close.values[i + (int((n / 2)) - 1)])
                 except Exception as ex:
                     pass
 
             # Detect local minima. If two points match, its a level.
             if s_1 == (n / 2) and s_2 == (n / 2):
                 try:
-                    support.append(bars.close.values[i + (int((n / 2)) - 1)])
-                # Catch empty list error if no levels are present.
+                    support.append(self.close.values[i + (int((n / 2)) - 1)])
                 except Exception as ex:
                     pass
 
         # Filter levels f times.
         levels = np.sort(np.append(support, resistance))
         filtered_levels = cluster_filter(levels, t, multipass=True)
-        for i in range(f - 1):
+        for _ in range(f - 1):
             filtered_levels = cluster_filter(filtered_levels, t, multipass=True)
 
         return filtered_levels
 
-    def cluster_filter(levels: list, t: float, multipass: bool):
+    def cluster_filter(self, t: float, multipass: bool):
         """
         Given a list of prices, identify groups of levels within t% of each other.
 
@@ -191,8 +188,8 @@ class Features:
 
         # Identify initial level clusters (single pass).
         temp_levels = []
-        for lvl_1 in levels:
-            for lvl_2 in levels:
+        for lvl_1 in self:
+            for lvl_2 in self:
                 range_max = lvl_1 + lvl_1 * t
                 range_min = lvl_1 - lvl_1 * t
                 if lvl_2 >= range_min and lvl_2 <= range_max:
@@ -204,17 +201,16 @@ class Features:
         # Identify strong clusters of 3 or more levels (multipass).
         if multipass:
             flattened = [item for sublist in temp_levels for item in sublist]
-            c_count = 0
             to_append = []
-            for cluster in temp_levels:
+            for c_count, cluster in enumerate(temp_levels):
                 for lvl_1 in cluster:
                     range_max = lvl_1 + lvl_1 * t
                     range_min = lvl_1 - lvl_1 * t
-                    for lvl_2 in flattened:
-                        if lvl_2 >= range_min and lvl_2 <= range_max:
-                            to_append.append([c_count, lvl_2])
-                c_count += 1
-
+                    to_append.extend(
+                        [c_count, lvl_2]
+                        for lvl_2 in flattened
+                        if lvl_2 >= range_min and lvl_2 <= range_max
+                    )
             # Add levels to their respective clusters and remove duplicates.
             for pair in to_append:
                 temp_levels[pair[0]].append(pair[1])
@@ -225,7 +221,7 @@ class Features:
         to_remove = [i for cluster in temp_levels for i in cluster]
 
         # Catch second-pass np.array > list conversion error.
-        if type(levels) != list:
+        if type(self) != list:
             final_levels = [i for i in levels.tolist() if i not in to_remove]
         else:
             final_levels = [i for i in levels if i not in to_remove]
@@ -240,9 +236,7 @@ class Features:
         """
         self.check_bars_type(bars)
 
-        ma = ta.MA(bars['close'], timeperiod=period, matype=0)
-
-        return ma
+        return ta.MA(bars['close'], timeperiod=period, matype=0)
 
     def EMA(self, period: int, bars: list):
         """
@@ -259,9 +253,7 @@ class Features:
 
         self.check_bars_type(bars)
 
-        ema = ta.EMA(bars['close'], timeperiod=period)
-
-        return ema
+        return ta.EMA(bars['close'], timeperiod=period)
 
     def MACD(self, name,  bars: list):
         """
@@ -287,9 +279,7 @@ class Features:
 
         self.check_bars_type(bars)
 
-        rsi = ta.RSI(bars['close'], timeperiod)
-
-        return rsi
+        return ta.RSI(bars['close'], timeperiod)
 
     def CCI(self, period: int, bars: list):
         """
@@ -306,10 +296,7 @@ class Features:
 
         self.check_bars_type(bars)
 
-        cci = ta.CCI(
-            bars['high'], bars['low'], bars['close'], timeperiod=period)
-
-        return cci
+        return ta.CCI(bars['high'], bars['low'], bars['close'], timeperiod=period)
 
     def BB(self, bars, period: int):
         """

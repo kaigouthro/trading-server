@@ -157,8 +157,7 @@ class Server:
                 sleep(self.seconds_til_next_minute())
                 self.cycle_count += 1
 
-            # Update data w/o delay when backtesting, no diagnostics.
-            elif not self.live_trading:
+            else:
                 self.events = self.data.update_market_data(self.events)
                 self.clear_event_queue()
 
@@ -183,9 +182,7 @@ class Server:
                 self.end_processing = time.time()
                 duration = round(
                     self.end_processing - self.start_processing, 5)
-                self.logger.info(
-                    "Processed " + str(count) + " events in " +
-                    str(duration) + " seconds.")
+                self.logger.info(f"Processed {str(count)} events in {str(duration)} seconds.")
 
                 # Do non-time critical work now that events are processed.
                 self.data.save_new_bars_to_db()
@@ -283,8 +280,7 @@ class Server:
         """
 
         now = datetime.datetime.utcnow().second
-        delay = 60 - now
-        return delay
+        return 60 - now
 
     def check_db_status(self, op_venues):
         """
@@ -305,7 +301,7 @@ class Server:
             # If no exception, DBs exist
             time.sleep(self.DB_TIMEOUT_MS)
             self.db_client.server_info()
-            self.logger.info("Connected to DB client at " + self.DB_URL + ".")
+            self.logger.info(f"Connected to DB client at {self.DB_URL}.")
 
             price_colls = self.db_prices.list_collection_names()
             other_colls = self.db_other.list_collection_names()
@@ -314,8 +310,7 @@ class Server:
             for venue_name in op_venues:
                 if venue_name not in price_colls:
 
-                    self.logger.info("Creating indexing for " + venue_name +
-                                      " in " + self.DB_PRICES + ".")
+                    self.logger.info(f"Creating indexing for {venue_name} in {self.DB_PRICES}.")
 
                     self.db_prices[venue_name].create_index(
                         [('timestamp', 1), ('symbol', 1)],
@@ -326,15 +321,13 @@ class Server:
             for coll_name in self.DB_OTHER_COLLS:
                 if coll_name not in other_colls:
 
-                    self.logger.info("Creating indexing for " + coll_name +
-                                      " in " + self.DB_OTHER + ".")
+                    self.logger.info(f"Creating indexing for {coll_name} in {self.DB_OTHER}.")
 
-                    # No indexing required for other DB categories (yet)
-                    # Add here if required later
+                                # No indexing required for other DB categories (yet)
+                                # Add here if required later
 
         except errors.ServerSelectionTimeoutError as e:
-            self.logger.info("Failed to connect to " + self.DB_PRICES +
-                              " at " + self.DB_URL + ".")
+            self.logger.info(f"Failed to connect to {self.DB_PRICES} at {self.DB_URL}.")
             raise Exception()
 
     def db_indices(self):

@@ -123,7 +123,7 @@ df = df.tail(SNAPSHOT_SIZE)
 entry = datetime.utcfromtimestamp(trade['signal_timestamp'])
 
 # Add entry marker
-entry_marker = [np.nan for i in range(SNAPSHOT_SIZE)]
+entry_marker = [np.nan for _ in range(SNAPSHOT_SIZE)]
 entry_marker[-1] = trade['entry_price']
 
 print(df)
@@ -137,12 +137,11 @@ def create_addplots(df, mpl):
                         'linewidths': 0.75}
 
     # Add technical feature data (indicator values, etc).
-    for col in list(df):
-        if (
-            col != "Open" and col != "High" and col != "Low"
-                and col != "Close" and col != "Volume"):
-            adps.append(mpl.make_addplot(df[col]))
-
+    adps.extend(
+        mpl.make_addplot(df[col])
+        for col in list(df)
+        if col not in ["Open", "High", "Low", "Close", "Volume"]
+    )
     # Add entry marker
     color = 'limegreen' if trade['direction'] == "LONG" else 'crimson'
     adps.append(mpl.make_addplot(

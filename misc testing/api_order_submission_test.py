@@ -45,8 +45,8 @@ db_other = db_client[DB_OTHER]
 
 def load_api_keys():
     venue_name = "BITMEX"
-    key = os.environ[venue_name + '_API_KEY']
-    secret = os.environ[venue_name + '_API_SECRET']
+    key = os.environ[f'{venue_name}_API_KEY']
+    secret = os.environ[f'{venue_name}_API_SECRET']
     return key, secret
 
 
@@ -60,16 +60,15 @@ def generate_request_signature(secret, request_type, url, nonce,
     path = parsed_url.path
 
     if parsed_url.query:
-        path = path + '?' + parsed_url.query
+        path = f'{path}?{parsed_url.query}'
 
     if isinstance(data, (bytes, bytearray)):
         data = data.decode('utf8')
 
     message = str(request_type).upper() + path + str(nonce) + data
-    signature = hmac.new(bytes(secret, 'utf8'), bytes(message, 'utf8'),
-                         digestmod=hashlib.sha256).hexdigest()
-
-    return signature
+    return hmac.new(
+        bytes(secret, 'utf8'), bytes(message, 'utf8'), digestmod=hashlib.sha256
+    ).hexdigest()
 
 
 def generate_request_headers(request, api_key, api_secret):
@@ -94,30 +93,24 @@ def get_positions():
         params='').prepare()
     request = generate_request_headers(prepared_request, api_key,
                                        api_secret)
-    response = s.send(request).json()
-
-    return response
+    return s.send(request).json()
 
 
 def round_increment(number, symbol):
     inc = symbol_min_increment[symbol]
-    if number < 1:
-        quote = number
-    else:
-        quote = (number // inc) * inc
-    return quote
+    return number if number < 1 else (number // inc) * inc
 
 
 def format_orders(orders):
     formatted = []
+    # TODO: add logic for below three fields.
+    execInst = None
+    timeInForce = None
+
     for order in orders:
         price = round_increment(order['price'], order['symbol'])
 
-        # TODO: add logic for below three fields.
-        execInst = None
         stopPx = None
-        timeInForce = None
-
         symbol = order['symbol']
         side = "Buy" if order['direction'] == "LONG" else "Sell"
         orderQty = round_increment(order['size'], order['symbol'])
@@ -169,9 +162,7 @@ def place_single_order(order):
         api_key,
         api_secret)
 
-    response = s.send(request)
-
-    return response
+    return s.send(request)
 
 
 def place_bulk_orders(orders):
@@ -211,9 +202,7 @@ def place_bulk_orders(orders):
             res = r.json()
 
             if isinstance(res, list):
-                for item in res:
-                    order_confirmations.append(item)
-
+                order_confirmations.extend(iter(res))
             elif isinstance(res, dict):
                 order_confirmations.append(res)
 
@@ -281,9 +270,7 @@ def cancel_orders(order_ids: list):
         api_key,
         api_secret)
 
-    response = s.send(request).json()
-
-    return response
+    return s.send(request).json()
 
 
 def close_position(symbol: str):
@@ -313,10 +300,7 @@ def close_position(symbol: str):
             api_secret)
 
         response = s.send(request).json()
-        if response['ordStatus'] == "Filled":
-            return True
-        else:
-            return False
+        return response['ordStatus'] == "Filled"
 
 
 def get_executions(symbol, start_timestamp=None, count=500):
@@ -438,9 +422,12 @@ def get_orders(symbol, start_timestamp=None, count=500):
         if "\n" in res['text']:
             text = res['text'].split("\n")
             metatype = text[1]
-        elif (
-            res['text'] == "ENTRY" or res['text'] == "STOP" or res['text'] ==
-                "TAKE_PROFIT" or res['text'] == "FINAL_TAKE_PROFIT"):
+        elif res['text'] in [
+            "ENTRY",
+            "STOP",
+            "TAKE_PROFIT",
+            "FINAL_TAKE_PROFIT",
+        ]:
             metatype = res['text']
         else:
             # raise Exception("Order metatype error:", res['text'])
