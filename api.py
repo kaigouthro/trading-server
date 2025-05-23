@@ -48,25 +48,22 @@ def return_portfolio():
         if portfolio:
             return json.dumps(portfolio), 200, {'ContentType':'application/json'}
         else:
-            return json.dumps({'success': False, 'message': 'Not found'}),
-            404, {'ContentType':'application/json'}
+            return json.dumps({'success': False, 'message': 'Not found'}), 404, {'ContentType':'application/json'}
 
     else:
-        return json.dumps({'success': False, 'message': 'Invalid method'}),
-        403, {'ContentType':'application/json'}
+        return json.dumps({'success': False, 'message': 'Invalid method'}), 403, {'ContentType':'application/json'}
 
 
 # Portfolio settings route
 @app.route("/portfolio/settings/<new_state>", methods=['POST'])
-def change_portfolio_settings():
+def change_portfolio_settings(new_state):
     if request.method == 'POST':
         return " Posted to /portfolio/settings/ successfully"
 
         # TODO: set new portfolio settings
 
     else:
-        return json.dumps({'success': False, 'message': 'Invalid method'}),
-        403, {'ContentType':'application/json'}
+        return json.dumps({'success': False, 'message': 'Invalid method'}), 403, {'ContentType':'application/json'}
 
 
 if __name__ == "__main__":

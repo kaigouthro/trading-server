@@ -18,6 +18,7 @@ import pymongo
 import queue
 import time
 import json
+import sys
 
 
 class Datahandler:
@@ -30,15 +31,15 @@ class Datahandler:
     Strategy object to consume.
     """
 
-    def __init__(self, exchanges, logger, db, db_client):
+    def __init__(self, exchanges, logger, db, db_client, live_trading):
         self.exchanges = exchanges
         self.logger = logger
         self.db = db
         self.db_client = db_client
         self.db_collections = {
             i.get_name(): db[i.get_name()] for i in self.exchanges}
-        self.live_trading = False
-        self.ready = False
+        self.live_trading = live_trading
+        self.ready = False if self.live_trading else True
         self.total_instruments = self.get_total_instruments()
         self.bars_save_to_db = queue.Queue(0)
 
@@ -49,7 +50,7 @@ class Datahandler:
         self.std_dev_parse_time = 0
         self.var_parse_time = 0
 
-    def update_market_data(self, events):
+    def update_market_data(self, events, timestamp):
         """
         Pushes new market events to the event queue.
 
@@ -63,14 +64,13 @@ class Datahandler:
 
         if self.live_trading:
             market_data = self.get_new_data()
-
         else:
-            market_data = self.get_historic_data()
+            market_data, timestamp = self.get_historic_data(timestamp)
 
         for event in market_data:
             events.put(event)
 
-        return events
+        return events, timestamp
 
     def get_new_data(self):
         """
@@ -117,6 +117,61 @@ class Datahandler:
                     self.bars_save_to_db.put(event)
 
         return new_market_events
+
+    def get_historic_data(self, timestamp):
+        """
+        Return a list of market events (new bars) for all symbols from
+        all exchanges for the parameter timestamp.
+
+        If timestamp is None, start from the earliest stored data.
+
+        Args:
+            None.
+        Returns:
+            new_market_events: list containing new market events.
+        Raises:
+            None.
+        """
+
+        # If timestamp null, sub with earliest timestamp of active symbols.
+        if not timestamp:
+            timestamps = {}
+            for exchange in self.exchanges:
+                for symbol in exchange.get_symbols():
+
+                    timestamps[int(exchange.get_origin_timestamp(symbol))] = {
+                        "venue": exchange.get_name(),
+                        "symbol": symbol
+                    }
+
+            timestamp = min(timestamps.keys())
+
+        # Fetch 1-min bars matching timestamp from DB
+        new_market_events = []
+        for exchange in self.exchanges:
+            for symbol in exchange.get_symbols():
+
+                result = self.db_collections[exchange.get_name()].find({
+                    'timestamp': timestamp, 'symbol': symbol
+                })[0]
+
+                bar = {
+                    'symbol': result['symbol'],
+                    'timestamp': result['timestamp'],
+                    'open': result['open'],
+                    'high': result['high'],
+                    'low': result['low'],
+                    'close': result['close'],
+                    'volume': result['volume'],
+                }
+
+                event = MarketEvent(exchange, bar)
+                new_market_events.append(event)
+
+                self.logger.info(
+                    "Current timestamp: " + str(result['timestamp']))
+
+        return new_market_events, timestamp
 
     def track_tick_processing_performance(self, duration):
         """
@@ -351,7 +406,7 @@ class Datahandler:
                 except Exception as e:
                     # Retry polling with an exponential delay.
 
-                    for i in range(timeout):
+                    for j in range(timeout):
 
                         try:
                             time.sleep(delay + 1)
@@ -364,7 +419,7 @@ class Datahandler:
 
                         except Exception as e:
                             delay *= stagger
-                            if i == timeout - 1:
+                            if j == timeout - 1:
                                 raise Exception("Polling timeout.")
                 poll_count += 1
 
@@ -405,9 +460,9 @@ class Datahandler:
             else:
                 # Dump the mismatched bars and timestamps to file if error.
                 with open("bars.json", 'w', encoding='utf-8') as f1:
-                    json.dump(bars, f, ensure_ascii=False, indent=4)
+                    json.dump(bars, f1, ensure_ascii=False, indent=4)
                 with open("timestamps.json", 'w', encoding='utf-8') as f2:
-                    json.dump(timestamps, f, ensure_ascii=False, indent=4)
+                    json.dump(timestamps, f2, ensure_ascii=False, indent=4)
 
                 raise Exception(
                     "Fetched bars do not match missing timestamps.")
@@ -508,7 +563,7 @@ class Datahandler:
                     time.sleep(stagger)
                 except Exception as e:
                     # retry poll with an exponential delay after each error
-                    for i in range(timeout):
+                    for j in range(timeout):
                         try:
                             time.sleep(delay)
                             bars = report['exchange'].get_bars_in_period(
@@ -519,7 +574,7 @@ class Datahandler:
                             break
                         except Exception as e:
                             delay *= stagger
-                            if i == timeout - 1:
+                            if j == timeout - 1:
                                 raise Exception("Polling timeout.")
 
             # sanity check, check that the retreived bars match gaps

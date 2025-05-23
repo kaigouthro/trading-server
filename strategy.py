@@ -10,7 +10,7 @@ Some rights reserved. See LICENSE.md, AUTHORS.md.
 """
 
 from datetime import date, datetime, timedelta
-from model import EMACrossTestingOnly
+from model import EMACrossTestingOnly, EQTrendFollowing
 from pymongo import MongoClient, errors
 from features import Features
 from dateutil import parser
@@ -18,8 +18,10 @@ import pandas as pd
 import calendar
 import pymongo
 import queue
+import json
 import time
 import copy
+import sys
 
 
 class Strategy:
@@ -59,12 +61,14 @@ class Strategy:
     # Maximum lookback in use by any strategy.
     MAX_LOOKBACK = 150
 
-    def __init__(self, exchanges, logger, db_prices, db_other, db_client):
+    def __init__(self, exchanges, logger, db_prices, db_other, db_client,
+                 live_trading):
         self.exchanges = exchanges
         self.logger = logger
         self.db_prices = db_prices
         self.db_other = db_other
         self.db_client = db_client
+        self.live_trading = live_trading
         self.db_collections_price = {
             i.get_name(): db_prices[i.get_name()] for i in self.exchanges}
 
@@ -103,7 +107,6 @@ class Strategy:
         if count >= 1:
 
             # Get operating timeframes for the current period.
-
             timestamp = event.get_bar()['timestamp']
             timeframes = self.get_relevant_timeframes(timestamp)
 
@@ -179,20 +182,6 @@ class Strategy:
             # TODO: df.append() is slow and copies the whole dataframe. Later
             # need to swap to a data structure other than a dataframe for live
             # data addition. Like an in-memory csv/DB, or list of dicts, etc.
-
-        # Log model and timeframe details.
-        for model in self.models:
-
-            venue = exc.get_name()
-            inst = model.get_instruments()[venue][sym]
-
-            if inst == sym:
-                self.logger.info(
-                    model.get_name() + ": " + venue + ": " + inst)
-                self.logger.info(
-                    "Operating timeframes: " + str(op_timeframes))
-                self.logger.info(
-                    "Required timeframes: " + str(timeframes))
 
     def calculate_features(self, event, timeframes):
         """
@@ -275,14 +264,14 @@ class Strategy:
 
             venue = exc.get_name()
             inst = model.get_instruments()[venue][sym]
-
             if inst == sym:
                 for tf in op_timeframes:
                     if tf in model.get_operating_timeframes():
 
-                        # Get non-op, but still required timeframe codes.
                         req_tf = model.get_required_timeframes(
                             [tf], result=True)
+
+                        self.logger.info("Required timeframes: " + str(req_tf))
 
                         # Get non-trigger data as list of {tf : dataframe}.
                         req_data = [
@@ -294,10 +283,18 @@ class Strategy:
 
                         # Put generated signal in the main event queue.
                         if result:
+
+                            # print(json.dumps(event.get_bar(), indent=2))
+
+                            result.entry_timestamp = event.get_bar()['timestamp']  # noqa
+
+                            # print(result.entry_timestamp)
+
                             events.put(result)
 
                             # Put signal in separate save-later queue.
-                            self.signals_save_to_db.put(result)
+                            if self.live_trading:
+                                self.signals_save_to_db.put(result)
 
     def build_dataframe(self, exc, sym, tf, current_bar=None, lookback=150):
         """
@@ -481,8 +478,7 @@ class Strategy:
             None.
         """
 
-        models = []
-        models.append(EMACrossTestingOnly(logger))
+        models = [EMACrossTestingOnly(logger), EQTrendFollowing(logger)]
         self.logger.info("Initialised models.")
         return models
 
@@ -520,7 +516,6 @@ class Strategy:
                 " timeframe datasets in " + str(duration) + " seconds.")
 
     def load_local_data(self, exchange, empty=False):
-
         """
         Create and return a dictionary of dataframes for all symbols and
         timeframes for the given venue.
