@@ -406,7 +406,7 @@ class Datahandler:
                 except Exception as e:
                     # Retry polling with an exponential delay.
 
-                    for i in range(timeout):
+                    for j in range(timeout):
 
                         try:
                             time.sleep(delay + 1)
@@ -419,7 +419,7 @@ class Datahandler:
 
                         except Exception as e:
                             delay *= stagger
-                            if i == timeout - 1:
+                            if j == timeout - 1:
                                 raise Exception("Polling timeout.")
                 poll_count += 1
 
@@ -460,9 +460,9 @@ class Datahandler:
             else:
                 # Dump the mismatched bars and timestamps to file if error.
                 with open("bars.json", 'w', encoding='utf-8') as f1:
-                    json.dump(bars, f, ensure_ascii=False, indent=4)
+                    json.dump(bars, f1, ensure_ascii=False, indent=4)
                 with open("timestamps.json", 'w', encoding='utf-8') as f2:
-                    json.dump(timestamps, f, ensure_ascii=False, indent=4)
+                    json.dump(timestamps, f2, ensure_ascii=False, indent=4)
 
                 raise Exception(
                     "Fetched bars do not match missing timestamps.")
@@ -563,7 +563,7 @@ class Datahandler:
                     time.sleep(stagger)
                 except Exception as e:
                     # retry poll with an exponential delay after each error
-                    for i in range(timeout):
+                    for j in range(timeout):
                         try:
                             time.sleep(delay)
                             bars = report['exchange'].get_bars_in_period(
@@ -574,7 +574,7 @@ class Datahandler:
                             break
                         except Exception as e:
                             delay *= stagger
-                            if i == timeout - 1:
+                            if j == timeout - 1:
                                 raise Exception("Polling timeout.")
 
             # sanity check, check that the retreived bars match gaps
