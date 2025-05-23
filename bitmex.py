@@ -45,11 +45,12 @@ class Bitmex(Exchange):
     BULK_ORDERS_URL = "/order/bulk"
     TRADE_HIST_URL = "/execution/tradeHistory"
 
-    def __init__(self, logger):
+    def __init__(self, logger, live_trading):
         super()
         self.logger = logger
         self.name = "BitMEX"
         self.symbols = ["XBTUSD"] # "ETHUSD", "XRPUSD", "BCHUSD", "LTCUSD", "LINKUSDT"]
+        self.live_trading = live_trading
 
         # Minimum price increment for each instrument.
         self.symbol_min_increment = {
@@ -74,12 +75,13 @@ class Bitmex(Exchange):
 
         self.api_key, self.api_secret = self.load_api_keys()
 
-        # Connect to websocket stream.
-        self.ws = Bitmex_WS(
-            self.logger, self.symbols, self.channels, self.WS_URL,
-            self.api_key, self.api_secret)
-        if not self.ws.ws.sock.connected:
-            self.logger.info("Failed to to connect to BitMEX websocket.")
+        # Connect to websocket stream if in live operation.
+        if live_trading:
+            self.ws = Bitmex_WS(
+                self.logger, self.symbols, self.channels, self.WS_URL,
+                self.api_key, self.api_secret)
+            if not self.ws.ws.sock.connected:
+                self.logger.info("Failed to to connect to BitMEX websocket.")
 
         # Set default https request retry behaviour.
         retries = Retry(
@@ -606,6 +608,9 @@ class Bitmex(Exchange):
 
             payload = {"orderID": order_ids}
 
+            print("IDS to cancel")
+            print(json.dumps(payload, indent=2))
+
             prepared_request = Request(
                 "DELETE",
                 self.BASE_URL_TESTNET + self.ORDERS_URL,
@@ -619,17 +624,33 @@ class Bitmex(Exchange):
 
             response = self.session.send(request).json()
 
+
             response = [response] if not isinstance(response, list) else response
+
+            print("Response:")
+            print(json.dumps(response, indent=2))
 
             cancel_confs = {}
 
             for i in response:
 
                 try:
+                    # Suceessful cancellation case
                     price = i['stopPx'] if i['ordType'] == "Stop" else i['price']
                 except KeyError:
-                    print(json.dumps(response, indent=2))
-                    raise Exception("Unexpected response format: ", i)
+
+                    try:
+                        # Failed to cancel because order not found
+                        if i['error'] is not None:
+                            if i['error'] == "Unable to cancel order: Not found or not owned by user":
+                                cancel_confs[i['orderID']] = "NOT FOUND"
+                            else:
+                                print(json.dumps(i['error'], indent=2))
+                                raise Exception("Unhandled cancellation message case: ", i['error'])
+
+                    except KeyError:
+                        print(json.dumps(i['error'], indent=2))
+                        raise Exception("Unhandled cancellation message case: ", i['error'])
 
                 try:
                     # Order was filled or cancelled previously.
